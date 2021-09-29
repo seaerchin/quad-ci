@@ -1,7 +1,8 @@
 module Core where
 
 import RIO
-import RIO.Map (filter, size)
+import qualified RIO.List as L
+import qualified RIO.Map as M (filter, insert, member, size)
 import RIO.NonEmpty (head)
 
 -- a build is a series of commands, which leads to a result (in text)
@@ -60,20 +61,31 @@ progress build = case build.state of
         pure build{state = BuildFinished result}
       Right step ->
         pure build{state = (BuildRunning . BuildRunningState . StepName) $ stepNameToText step.name}
-  BuildRunning _ -> undefined
+  BuildRunning state -> do
+    let exit = ContainerExitCode 0
+        result = exitCodeToStepResult exit
+    pure build {state = BuildReady, completedSteps = M.insert state.step result build.completedSteps}
   BuildFinished br -> pure build
 
 buildHasNextStep :: Build -> Either BuildResult Step
 buildHasNextStep b =
   let p = b.pipeline.steps
-   in if not (null p)
-        then Right $ head p
-        else Left (if hasFailure b.completedSteps then BuildFailed else BuildSucceeded)
+      isFailureState = hasFailure b.completedSteps
+   in if isFailureState
+        then Left BuildFailed
+        else case nextStep of
+          Just step -> Right step
+          Nothing -> Left BuildSucceeded
+  where
+    -- find the first new step (not part of the completed steps)
+    nextStep = L.find isNewStep b.pipeline.steps
+    isNewStep step = not $ M.member step.name b.completedSteps
 
+-- equivalent to not allSucceeded
 hasFailure :: Map b StepResult -> Bool
 hasFailure m =
-  size
-    ( RIO.Map.filter
+  M.size
+    ( M.filter
         ( \case
             StepFailed _ -> True
             StepSucceeded -> False
