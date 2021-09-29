@@ -3,7 +3,6 @@
 module Main where
 
 import Control.Monad
-import Lib
 
 main :: Monad m => m ()
 main = return ()

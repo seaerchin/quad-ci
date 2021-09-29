@@ -25,7 +25,7 @@ source-repository head
 
 library
   exposed-modules:
-      Lib
+      Core
   other-modules:
       Paths_quad
   hs-source-dirs:
