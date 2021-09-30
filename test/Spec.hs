@@ -1,6 +1,7 @@
 module Main where
 
 import Core
+import Docker
 import RIO
 import qualified RIO.NonEmpty.Partial as NP
 

@@ -1,5 +1,6 @@
 module Core where
 
+import Docker
 import RIO
 import qualified RIO.List as L
 import qualified RIO.Map as M (filter, insert, member, size)
@@ -23,10 +24,6 @@ data Build = Build {pipeline :: Pipeline, state :: BuildState, completedSteps ::
 -- wrapper type
 newtype StepName = StepName Text deriving (Eq, Show, Ord)
 
--- wrapper type
--- an image points to an actual docker image
-newtype Image = Image Text deriving (Eq, Show)
-
 data BuildState = BuildReady | BuildRunning BuildRunningState | BuildFinished BuildResult deriving (Eq, Show)
 
 data BuildResult = BuildSucceeded | BuildFailed deriving (Eq, Show)
@@ -35,17 +32,9 @@ data StepResult = StepFailed ContainerExitCode | StepSucceeded deriving (Eq, Sho
 
 newtype BuildRunningState = BuildRunningState {step :: StepName} deriving (Eq, Show)
 
-newtype ContainerExitCode = ContainerExitCode Int deriving (Eq, Show)
-
 -- boilerplate
 stepNameToText :: StepName -> Text
 stepNameToText (StepName step) = step
-
-imageToText :: Image -> Text
-imageToText (Image image) = image
-
-exitCodeToInt :: ContainerExitCode -> Int
-exitCodeToInt (ContainerExitCode c) = c
 
 exitCodeToStepResult :: ContainerExitCode -> StepResult
 exitCodeToStepResult exit =
@@ -53,6 +42,7 @@ exitCodeToStepResult exit =
     then StepSucceeded
     else StepFailed exit
 
+-- | State transition of the build between ready/running/completed
 progress :: Build -> IO Build
 progress build = case build.state of
   BuildReady ->
@@ -67,6 +57,8 @@ progress build = case build.state of
     pure build {state = BuildReady, completedSteps = M.insert state.step result build.completedSteps}
   BuildFinished br -> pure build
 
+-- | Checks if the build has a next step and returns it.
+-- Returns the result of the build if it is completed (no steps).
 buildHasNextStep :: Build -> Either BuildResult Step
 buildHasNextStep b =
   let p = b.pipeline.steps
