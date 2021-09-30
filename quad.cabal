@@ -27,6 +27,7 @@ library
   exposed-modules:
       Core
       Docker
+      Socket
   other-modules:
       Paths_quad
   hs-source-dirs:
