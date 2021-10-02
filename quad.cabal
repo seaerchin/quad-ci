@@ -27,6 +27,7 @@ library
   exposed-modules:
       Core
       Docker
+      Runner
       Socket
   other-modules:
       Paths_quad
