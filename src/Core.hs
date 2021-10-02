@@ -21,7 +21,7 @@ data Step = Step {name :: StepName, commands :: NonEmpty Text, image :: Image} d
 
 -- a build is a wrapper around the pipeline
 -- a build reports the state the pipelins is currently in
-data Build = Build {pipeline :: Pipeline, state :: BuildState, completedSteps :: Map StepName StepResult} deriving (Eq, Show)
+data Build = Build {pipeline :: Pipeline, state :: BuildState, completedSteps :: Map StepName StepResult, volume :: Docker.Volume} deriving (Eq, Show)
 
 -- wrapper type
 newtype StepName = StepName Text deriving (Eq, Show, Ord)

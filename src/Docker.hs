@@ -16,6 +16,12 @@ dockerApi = "/var/run/docker.sock"
 
 -- Refer to here: https://hackage.haskell.org/package/aeson-1.5.6.0/docs/Data-Aeson.html for simple toJSON instances
 
+-- NOTE: Newtypes are used instead of type because we do not want type synonyms.
+-- For example: we define a signature Image -> IO (); this allows also Volume -> IO () if
+-- they were both defined using type.
+
+newtype Volume = Volume Text deriving (Eq, Show)
+
 -- wrapper type
 -- an image points to an actual docker image
 newtype Image = Image Text deriving (Eq, Show)
@@ -34,11 +40,13 @@ data ContainerStatus = ContainerRunning | ContainerExited ContainerExitCode | Co
 data Service = Service
   { createContainer :: CreateContainerOptions -> IO ContainerId,
     startContainer :: ContainerId -> IO (),
-    containerStatus :: ContainerId -> IO ContainerStatus
+    containerStatus :: ContainerId -> IO ContainerStatus,
+    createVolume :: IO Volume
   }
 
 type RequestBuilder = Text -> HTTP.Request
 
+-- Small utilities/helpers
 imageToText :: Image -> Text
 imageToText (Image image) = image
 
@@ -47,6 +55,24 @@ exitCodeToInt (ContainerExitCode c) = c
 
 containerIdToText :: ContainerId -> Text
 containerIdToText (ContainerId id) = id
+
+volumeToText :: Volume -> Text
+volumeToText (Volume t) = t
+
+parseResponse :: HTTP.Response ByteString -> (Aeson.Value -> Aeson.Types.Parser a) -> IO a
+parseResponse res parser = do
+  -- this is within the either monad
+  let result = do
+        value <- Aeson.eitherDecodeStrict (HTTP.getResponseBody res)
+        Aeson.Types.parseEither parser value
+  case result of
+    -- either cannot decode the response or parser failed
+    Left s -> throwString s
+    Right status -> pure status
+
+-- Helper for easier piping ._.
+parseResponse' :: (Aeson.Types.Value -> Aeson.Types.Parser a) -> HTTP.Response ByteString -> IO a
+parseResponse' = flip parseResponse
 
 -- | NOTE: we are not passing in the name as a parameter here, so that is a future extension which we could implement.
 -- It would not be required because the consumer requesting the job would not require knowledge of the container's name.
@@ -82,22 +108,8 @@ createContainer_ makeReq options = do
           -- HTTP.setRequestQueryString [("name", Just $ encodeUtf8 "Testing")] $
           HTTP.setRequestMethod "POST" $
             makeReq "/containers/create"
-  resp <- HTTP.httpBS req
-  -- Dump response to check
-  traceShowIO resp
   -- convert into valid json using aeson parser
-  parseResponse resp parser
-
-parseResponse :: HTTP.Response ByteString -> (Aeson.Value -> Aeson.Types.Parser a) -> IO a
-parseResponse res parser = do
-  -- this is within the either monad
-  let result = do
-        value <- Aeson.eitherDecodeStrict (HTTP.getResponseBody res)
-        Aeson.Types.parseEither parser value
-  case result of
-    -- either cannot decode the response or parser failed
-    Left s -> throwString s
-    Right status -> pure status
+  HTTP.httpBS req >>= parseResponse' parser
 
 -- NOTE: This could be further improved by having the status code as a type
 startContainer_ :: RequestBuilder -> ContainerId -> IO ()
@@ -124,8 +136,18 @@ containerStatus_ mkReq id = do
             exitCode <- state .: "ExitCode"
             pure $ ContainerExited $ ContainerExitCode exitCode
           unknown -> pure $ ContainerOther unknown
-  resp <- HTTP.httpBS req
-  parseResponse resp parser
+  HTTP.httpBS req >>= parseResponse' parser
+
+createVolume_ :: RequestBuilder -> IO Volume
+createVolume_ mkReq = do
+  let body =
+        Aeson.object
+          [ ("Labels", Aeson.object [("quad", "")])
+          ]
+      req = HTTP.setRequestBodyJSON body $ HTTP.setRequestMethod "POST" $ mkReq "/volumes/create"
+      parser = Aeson.withObject "create-volume" $ \o -> do
+        Volume <$> o .: "Name"
+  HTTP.httpBS req >>= parseResponse' parser
 
 createService :: IO Service
 createService = do
@@ -133,4 +155,10 @@ createService = do
   let mkReq text =
         let path = encodeUtf8 $ "/v1.40" <> text
          in HTTP.setRequestManager manager $ HTTP.setRequestPath path HTTP.defaultRequest
-  pure Service {createContainer = createContainer_ mkReq, startContainer = startContainer_ mkReq, containerStatus = containerStatus_ mkReq}
+  pure
+    Service
+      { createContainer = createContainer_ mkReq,
+        startContainer = startContainer_ mkReq,
+        containerStatus = containerStatus_ mkReq,
+        createVolume = createVolume_ mkReq
+      }
