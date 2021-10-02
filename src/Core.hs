@@ -43,13 +43,18 @@ exitCodeToStepResult exit =
     else StepFailed exit
 
 -- | State transition of the build between ready/running/completed
-progress :: Build -> IO Build
-progress build = case build.state of
+-- NOTE: we could alternatively use typeclasses to implement this feature.
+-- Typeclasses would be easier actually and more extensible.
+progress :: Docker.Service -> Build -> IO Build
+progress docker build = case build.state of
   BuildReady ->
     case buildHasNextStep build of
       Left result ->
         pure build{state = BuildFinished result}
-      Right step ->
+      Right step -> do
+        let options = Docker.CreateContainerOptions step.image
+        containerId <- docker.createContainer options
+        docker.startContainer containerId
         pure build{state = (BuildRunning . BuildRunningState . StepName) $ stepNameToText step.name}
   BuildRunning state -> do
     let exit = ContainerExitCode 0
@@ -84,4 +89,4 @@ hasFailure m =
         )
         m
     )
-    == 0
+    > 0

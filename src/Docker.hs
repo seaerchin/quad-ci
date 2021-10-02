@@ -26,6 +26,12 @@ newtype CreateContainerOptions = CreateContainerOptions {image :: Image} derivin
 
 newtype ContainerId = ContainerId Text deriving (Eq, Show)
 
+-- TODO: refactor this to be a typeclass
+data Service = Service
+  { createContainer :: CreateContainerOptions -> IO ContainerId,
+    startContainer :: ContainerId -> IO ()
+  }
+
 imageToText :: Image -> Text
 imageToText (Image image) = image
 
@@ -37,8 +43,8 @@ containerIdToText (ContainerId id) = id
 
 -- | NOTE: we are not passing in the name as a parameter here, so that is a future extension which we could implement.
 -- It would not be required because the consumer requesting the job would not require knowledge of the container's name.
-createContainer :: CreateContainerOptions -> IO ContainerId
-createContainer options = do
+createContainer_ :: CreateContainerOptions -> IO ContainerId
+createContainer_ options = do
   -- refer to dockerd reference here: https://docs.docker.com/engine/reference/commandline/dockerd/#daemon-socket-option
   manager <- Socket.newManager dockerApi
   let image = imageToText options.image
@@ -80,8 +86,8 @@ parseResponse res parser = do
     Right status -> pure status
 
 -- NOTE: This could be further improved by having the status code as a type
-startContainer :: ContainerId -> IO ()
-startContainer containerId = do
+startContainer_ :: ContainerId -> IO ()
+startContainer_ containerId = do
   -- refer here: https://docs.docker.com/engine/api/v1.40/#operation/ContainerStart
   -- issue a POST request to the endpoint of the docker
   manager <- Socket.newManager dockerApi
@@ -90,3 +96,7 @@ startContainer containerId = do
       req = HTTP.setRequestManager manager $ HTTP.setRequestMethod "POST" $ HTTP.setRequestPath createEndpoint HTTP.defaultRequest
   resp <- HTTP.httpBS req
   putStrLn $ "container with id: " <> show id <> " has been started"
+
+createService :: IO Service
+createService = do
+  return Service {createContainer = createContainer_, startContainer = startContainer_}
