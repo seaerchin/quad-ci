@@ -1,7 +1,7 @@
 module Main where
 
 import Core
-import Docker
+import qualified Docker
 import RIO
 import qualified RIO.Map as Map
 import qualified RIO.NonEmpty.Partial as NP
@@ -15,7 +15,7 @@ makeStep :: Text -> Text -> [Text] -> Step
 makeStep name image commands =
   Step
     { name = StepName name,
-      image = Image image,
+      image = Docker.Image image,
       commands = NP.fromList commands
     }
 
