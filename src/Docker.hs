@@ -22,13 +22,13 @@ newtype Image = Image Text deriving (Eq, Show)
 
 newtype ContainerExitCode = ContainerExitCode Int deriving (Eq, Show)
 
-newtype CreateContainerOptions = CreateContainerOptions {image :: Image} deriving (Eq, Show)
+data CreateContainerOptions = CreateContainerOptions {image :: Image, script :: Text} deriving (Eq, Show)
 
 newtype ContainerId = ContainerId Text deriving (Eq, Show)
 
 -- | Represents the status of a container.
 -- ContainerOther represents an unknown state and should be taken as a failure state.
-data ContainerStatus = ContainerRunning | ContainerExited ContainerExitCode | ContainerOther Text
+data ContainerStatus = ContainerRunning | ContainerExited ContainerExitCode | ContainerOther Text deriving (Show)
 
 -- TODO: refactor this to be a typeclass
 data Service = Service
@@ -53,7 +53,6 @@ containerIdToText (ContainerId id) = id
 createContainer_ :: RequestBuilder -> CreateContainerOptions -> IO ContainerId
 createContainer_ makeReq options = do
   -- refer to dockerd reference here: https://docs.docker.com/engine/reference/commandline/dockerd/#daemon-socket-option
-  manager <- Socket.newManager dockerApi
   let image = imageToText options.image
       parser = Aeson.withObject "create-container" $ \obj -> do
         containerId <- obj .: "Id"
@@ -63,8 +62,17 @@ createContainer_ makeReq options = do
           [ ("Image", Aeson.toJSON image),
             ("Tty", Aeson.toJSON True),
             ("Labels", Aeson.object [("quad", "")]),
-            ("Cmd", "echo hello"),
-            ("Entrypoint", Aeson.toJSON [Aeson.String "/bin/sh", "-c"])
+            ("Entrypoint", Aeson.toJSON [Aeson.String "/bin/sh", "-c"]),
+            -- NOTE: we do a trick to run arbitrary scripts in our docker shell
+            -- First, we let the command to run be the env var $QUAD_SCRIPT.
+            -- Next, we provide the script and then we set the env var (within docker) to be what we provided.
+            -- Hence, on entry into the docker container, the container runs what we have supplied
+            ("Cmd", "echo \"$QUAD_SCRIPT\" | /bin/sh"),
+            ( "Env",
+              Aeson.toJSON
+                [ "QUAD_SCRIPT=" <> options.script
+                ]
+            )
           ]
       -- NOTE: different from book
       -- Get the default request
@@ -96,9 +104,7 @@ startContainer_ :: RequestBuilder -> ContainerId -> IO ()
 startContainer_ mkReq containerId = do
   -- refer here: https://docs.docker.com/engine/api/v1.40/#operation/ContainerStart
   -- issue a POST request to the endpoint of the docker
-  manager <- Socket.newManager dockerApi
   let id = containerIdToText containerId
-      createEndpoint = encodeUtf8 $ "/v1.40/containers/" <> id <> "/start"
       req = HTTP.setRequestMethod "POST" $ mkReq $ "/containers/" <> id <> "/start"
   resp <- HTTP.httpBS req
   putStrLn $ "container with id: " <> show id <> " has been started"
@@ -106,16 +112,20 @@ startContainer_ mkReq containerId = do
 -- | Requests for the status of a container from the docker daemon
 containerStatus_ :: RequestBuilder -> ContainerId -> IO ContainerStatus
 containerStatus_ mkReq id = do
-  manager <- Socket.newManager dockerApi
   -- issue a GET request to the endpoint and use aeson to extract it
   let strId = containerIdToText id
-      inspectEndpoint = encodeUtf8 $ "/containers/" <> strId <> "/json"
       req = HTTP.setRequestMethod "GET" $ mkReq $ "/containers/" <> strId <> "/json"
       parser = Aeson.withObject "container-status" $ \obj -> do
-        exitCode <- obj .: "State" >>= \state -> state .: "ExitCode"
-        pure $ ContainerId exitCode
-  resp <- HTTP.getResponseBody <$> HTTP.httpBS req
-  pure ContainerRunning
+        state <- obj .: "State"
+        status <- state .: "Status"
+        case status of
+          "running" -> pure ContainerRunning
+          "exited" -> do
+            exitCode <- state .: "ExitCode"
+            pure $ ContainerExited $ ContainerExitCode exitCode
+          unknown -> pure $ ContainerOther unknown
+  resp <- HTTP.httpBS req
+  parseResponse resp parser
 
 createService :: IO Service
 createService = do

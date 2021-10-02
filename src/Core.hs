@@ -5,6 +5,8 @@ import RIO
 import qualified RIO.List as L
 import qualified RIO.Map as M (filter, insert, member, size)
 import RIO.NonEmpty (head)
+import qualified RIO.NonEmpty as NonEmpty
+import qualified RIO.Text as Text
 
 -- a build is a series of commands, which leads to a result (in text)
 
@@ -52,7 +54,8 @@ progress docker build = case build.state of
       Left result ->
         pure build{state = BuildFinished result}
       Right step -> do
-        let options = Docker.CreateContainerOptions step.image
+        let script = Text.unlines $ ["set -ex"] <> NonEmpty.toList step.commands
+            options = Docker.CreateContainerOptions step.image script
         containerId <- docker.createContainer options
         docker.startContainer containerId
         pure build{state = BuildRunning $ BuildRunningState step.name containerId}
@@ -62,8 +65,7 @@ progress docker build = case build.state of
       ContainerRunning -> pure build
       ContainerExited exit ->
         let result = exitCodeToStepResult exit
-            endState = BuildReady
-         in pure build {state = endState, completedSteps = M.insert state.step result build.completedSteps}
+         in pure build {state = BuildReady, completedSteps = M.insert state.step result build.completedSteps}
       ContainerOther txt -> do
         let s = BuildUnexpectedState txt
         pure build {state = BuildFinished s}
