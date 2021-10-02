@@ -26,11 +26,11 @@ newtype StepName = StepName Text deriving (Eq, Show, Ord)
 
 data BuildState = BuildReady | BuildRunning BuildRunningState | BuildFinished BuildResult deriving (Eq, Show)
 
-data BuildResult = BuildSucceeded | BuildFailed deriving (Eq, Show)
+data BuildResult = BuildSucceeded | BuildFailed | BuildUnexpectedState Text deriving (Eq, Show)
 
 data StepResult = StepFailed ContainerExitCode | StepSucceeded deriving (Eq, Show)
 
-newtype BuildRunningState = BuildRunningState {step :: StepName} deriving (Eq, Show)
+data BuildRunningState = BuildRunningState {step :: StepName, container :: ContainerId} deriving (Eq, Show)
 
 -- boilerplate
 stepNameToText :: StepName -> Text
@@ -55,11 +55,18 @@ progress docker build = case build.state of
         let options = Docker.CreateContainerOptions step.image
         containerId <- docker.createContainer options
         docker.startContainer containerId
-        pure build{state = (BuildRunning . BuildRunningState . StepName) $ stepNameToText step.name}
+        pure build{state = BuildRunning $ BuildRunningState step.name containerId}
   BuildRunning state -> do
-    let exit = ContainerExitCode 0
-        result = exitCodeToStepResult exit
-    pure build {state = BuildReady, completedSteps = M.insert state.step result build.completedSteps}
+    status <- docker.containerStatus state.container
+    case status of
+      ContainerRunning -> pure build
+      ContainerExited exit ->
+        let result = exitCodeToStepResult exit
+            endState = BuildReady
+         in pure build {state = endState, completedSteps = M.insert state.step result build.completedSteps}
+      ContainerOther txt -> do
+        let s = BuildUnexpectedState txt
+        pure build {state = BuildFinished s}
   BuildFinished br -> pure build
 
 -- | Checks if the build has a next step and returns it.

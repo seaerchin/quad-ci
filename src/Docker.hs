@@ -26,11 +26,18 @@ newtype CreateContainerOptions = CreateContainerOptions {image :: Image} derivin
 
 newtype ContainerId = ContainerId Text deriving (Eq, Show)
 
+-- | Represents the status of a container.
+-- ContainerOther represents an unknown state and should be taken as a failure state.
+data ContainerStatus = ContainerRunning | ContainerExited ContainerExitCode | ContainerOther Text
+
 -- TODO: refactor this to be a typeclass
 data Service = Service
   { createContainer :: CreateContainerOptions -> IO ContainerId,
-    startContainer :: ContainerId -> IO ()
+    startContainer :: ContainerId -> IO (),
+    containerStatus :: ContainerId -> IO ContainerStatus
   }
+
+type RequestBuilder = Text -> HTTP.Request
 
 imageToText :: Image -> Text
 imageToText (Image image) = image
@@ -43,8 +50,8 @@ containerIdToText (ContainerId id) = id
 
 -- | NOTE: we are not passing in the name as a parameter here, so that is a future extension which we could implement.
 -- It would not be required because the consumer requesting the job would not require knowledge of the container's name.
-createContainer_ :: CreateContainerOptions -> IO ContainerId
-createContainer_ options = do
+createContainer_ :: RequestBuilder -> CreateContainerOptions -> IO ContainerId
+createContainer_ makeReq options = do
   -- refer to dockerd reference here: https://docs.docker.com/engine/reference/commandline/dockerd/#daemon-socket-option
   manager <- Socket.newManager dockerApi
   let image = imageToText options.image
@@ -63,11 +70,10 @@ createContainer_ options = do
       -- Get the default request
       -- Set the parameters, method and body
       req =
-        HTTP.setRequestManager manager $
-          HTTP.setRequestBodyJSON body $
-            -- HTTP.setRequestQueryString [("name", Just $ encodeUtf8 "Testing")] $
-            HTTP.setRequestMethod "POST" $
-              HTTP.setRequestPath "/v1.40/containers/create" HTTP.defaultRequest
+        HTTP.setRequestBodyJSON body $
+          -- HTTP.setRequestQueryString [("name", Just $ encodeUtf8 "Testing")] $
+          HTTP.setRequestMethod "POST" $
+            makeReq "/containers/create"
   resp <- HTTP.httpBS req
   -- Dump response to check
   traceShowIO resp
@@ -86,17 +92,35 @@ parseResponse res parser = do
     Right status -> pure status
 
 -- NOTE: This could be further improved by having the status code as a type
-startContainer_ :: ContainerId -> IO ()
-startContainer_ containerId = do
+startContainer_ :: RequestBuilder -> ContainerId -> IO ()
+startContainer_ mkReq containerId = do
   -- refer here: https://docs.docker.com/engine/api/v1.40/#operation/ContainerStart
   -- issue a POST request to the endpoint of the docker
   manager <- Socket.newManager dockerApi
   let id = containerIdToText containerId
       createEndpoint = encodeUtf8 $ "/v1.40/containers/" <> id <> "/start"
-      req = HTTP.setRequestManager manager $ HTTP.setRequestMethod "POST" $ HTTP.setRequestPath createEndpoint HTTP.defaultRequest
+      req = HTTP.setRequestMethod "POST" $ mkReq $ "/containers/" <> id <> "/start"
   resp <- HTTP.httpBS req
   putStrLn $ "container with id: " <> show id <> " has been started"
 
+-- | Requests for the status of a container from the docker daemon
+containerStatus_ :: RequestBuilder -> ContainerId -> IO ContainerStatus
+containerStatus_ mkReq id = do
+  manager <- Socket.newManager dockerApi
+  -- issue a GET request to the endpoint and use aeson to extract it
+  let strId = containerIdToText id
+      inspectEndpoint = encodeUtf8 $ "/containers/" <> strId <> "/json"
+      req = HTTP.setRequestMethod "GET" $ mkReq $ "/containers/" <> strId <> "/json"
+      parser = Aeson.withObject "container-status" $ \obj -> do
+        exitCode <- obj .: "State" >>= \state -> state .: "ExitCode"
+        pure $ ContainerId exitCode
+  resp <- HTTP.getResponseBody <$> HTTP.httpBS req
+  pure ContainerRunning
+
 createService :: IO Service
 createService = do
-  return Service {createContainer = createContainer_, startContainer = startContainer_}
+  manager <- Socket.newManager dockerApi
+  let mkReq text =
+        let path = encodeUtf8 $ "/v1.40" <> text
+         in HTTP.setRequestManager manager $ HTTP.setRequestPath path HTTP.defaultRequest
+  pure Service {createContainer = createContainer_ mkReq, startContainer = startContainer_ mkReq, containerStatus = containerStatus_ mkReq}
