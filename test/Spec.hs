@@ -22,18 +22,34 @@ makeStep name image commands =
 makePipeline :: Steps -> Pipeline
 makePipeline s = Pipeline {steps = s}
 
+-- | Happy path test where everything passes
 testRunSuccess :: Runner.Service -> IO ()
 testRunSuccess runner = do
-  build <-
-    runner.prepareBuild $
-      makePipeline $
-        NP.fromList
-          [ makeStep "First step" "ubuntu" ["date"],
-            makeStep "Second step" "ubuntu" ["uname -r"]
-          ]
-  result <- runner.runBuild build
+  result <-
+    runner.runBuild
+      =<< ( runner.prepareBuild $
+              makePipeline $
+                NP.fromList
+                  [ makeStep "First step" "ubuntu" ["date"],
+                    makeStep "Second step" "ubuntu" ["uname -r"]
+                  ]
+          )
   result.state `shouldBe` BuildFinished BuildSucceeded
   Map.elems result.completedSteps `shouldBe` [StepSucceeded, StepSucceeded]
+
+-- | Expected failure
+testRunFailure :: Runner.Service -> IO ()
+testRunFailure runner = do
+  result <-
+    runner.runBuild
+      =<< ( runner.prepareBuild $
+              makePipeline $
+                NP.fromList
+                  [ makeStep "Should fail" "ubuntu" ["exit 1"]
+                  ]
+          )
+  result.state `shouldBe` BuildFinished BuildFailed
+  Map.elems result.completedSteps `shouldBe` [StepFailed (Docker.ContainerExitCode 1)]
 
 -- | Remove dangling containers created by testing
 cleanupDocker :: IO ()
@@ -49,3 +65,5 @@ main = hspec do
   beforeAll cleanupDocker $ describe "Quad CI" do
     it "should run a successful build" $ do
       testRunSuccess runner
+    it "should fail and exit successfully" $ do
+      testRunFailure runner
