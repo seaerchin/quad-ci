@@ -6,6 +6,7 @@ module Docker where
 -- If the key is not guaranteed, an alternative .:? could be used instead, which encodes it as Maybe a
 import Data.Aeson ((.:))
 import qualified Data.Aeson as Aeson
+import qualified Data.Aeson.Types as Aeson
 import qualified Data.Aeson.Types as Aeson.Types
 import qualified Network.HTTP.Simple as HTTP
 import RIO
@@ -28,7 +29,7 @@ newtype Image = Image Text deriving (Eq, Show)
 
 newtype ContainerExitCode = ContainerExitCode Int deriving (Eq, Show)
 
-data CreateContainerOptions = CreateContainerOptions {image :: Image, script :: Text} deriving (Eq, Show)
+data CreateContainerOptions = CreateContainerOptions {image :: Image, script :: Text, volume :: Volume} deriving (Eq, Show)
 
 newtype ContainerId = ContainerId Text deriving (Eq, Show)
 
@@ -83,6 +84,8 @@ createContainer_ makeReq options = do
       parser = Aeson.withObject "create-container" $ \obj -> do
         containerId <- obj .: "Id"
         pure $ ContainerId containerId
+      mountPoint = volumeToText options.volume <> ":/app"
+      bind = Aeson.object [("Binds", Aeson.toJSON [mountPoint])]
       body =
         Aeson.object
           [ ("Image", Aeson.toJSON image),
@@ -98,7 +101,9 @@ createContainer_ makeReq options = do
               Aeson.toJSON
                 [ "QUAD_SCRIPT=" <> options.script
                 ]
-            )
+            ),
+            ("WorkingDir", "/app"),
+            ("HostConfig", bind)
           ]
       -- NOTE: different from book
       -- Get the default request
