@@ -1,14 +1,27 @@
 module Core where
 
+import qualified Data.Time.Clock.POSIX as Time
 import Docker
 import RIO
 import qualified RIO.List as L
-import qualified RIO.Map as M (filter, insert, member, size)
+import qualified RIO.Map as M (filter, foldMapWithKey, insert, mapWithKey, member, singleton, size, toList)
 import RIO.NonEmpty (head)
 import qualified RIO.NonEmpty as NonEmpty
 import qualified RIO.Text as Text
 
--- a build is a series of commands, which leads to a result (in text)
+-- | Models a log. This could be abstracted using writer
+type LogCollection = Map StepName CollectionStatus
+
+-- | State machine for collection status of logs
+data CollectionStatus
+  = CollectionReady
+  | -- Stores the last log collected time for a particular container
+    CollectingLogs Docker.ContainerId Time.POSIXTime
+  | CollectionFinished
+  deriving (Eq, Show)
+
+-- | A log is tagged to each step in the pipeline and the output is a bytestring of raw textual data
+data Log = Log {output :: ByteString, step :: StepName} deriving (Eq, Show)
 
 -- a pipeline (i.e., a build) is modelled as a series of steps
 newtype Pipeline = Pipeline {steps :: Steps} deriving (Eq, Show)
@@ -21,7 +34,14 @@ data Step = Step {name :: StepName, commands :: NonEmpty Text, image :: Image} d
 
 -- a build is a wrapper around the pipeline
 -- a build reports the state the pipelins is currently in
-data Build = Build {pipeline :: Pipeline, state :: BuildState, completedSteps :: Map StepName StepResult, volume :: Docker.Volume} deriving (Eq, Show)
+-- a build is a series of commands, which leads to a result (in text)
+data Build = Build
+  { pipeline :: Pipeline,
+    state :: BuildState,
+    completedSteps :: Map StepName StepResult,
+    volume :: Docker.Volume
+  }
+  deriving (Eq, Show)
 
 -- wrapper type
 newtype StepName = StepName Text deriving (Eq, Show, Ord)
@@ -86,16 +106,77 @@ buildHasNextStep b =
     -- find the first new step (not part of the completed steps)
     nextStep = L.find isNewStep b.pipeline.steps
     isNewStep step = not $ M.member step.name b.completedSteps
-
--- equivalent to not allSucceeded
-hasFailure :: Map b StepResult -> Bool
-hasFailure m =
-  M.size
-    ( M.filter
-        ( \case
-            StepFailed _ -> True
-            StepSucceeded -> False
+    -- equivalent to not allSucceeded
+    hasFailure :: Map b StepResult -> Bool
+    hasFailure m =
+      M.size
+        ( M.filter
+            ( \case
+                StepFailed _ -> True
+                StepSucceeded -> False
+            )
+            m
         )
-        m
-    )
-    > 0
+        > 0
+
+-- | Initializes the starting state of the log status of each step in the pipeline.
+-- Each step is CollectionReady
+initLogCollection :: Pipeline -> LogCollection
+initLogCollection p = foldMap f p.steps
+  where
+    f step = M.singleton step.name CollectionReady
+
+-- | A log collection tracks the collection status of a particular step.
+-- Log output is then obtained from the container and returned as a tuple of the log collection and the actual logs.
+-- NOTE: There seems to be some redundancy as the Log datatype tracks the stepname, which is already stored in logCollection
+collectLogs :: LogCollection -> BuildRunningState -> IO (LogCollection, [Log])
+collectLogs lc build = do
+  -- logcollection is a map of stringname to status
+  -- Step 1. filter where the status is either ready or last collected time > interval
+  -- Step 2. for these containers, map them to an IO action fetching the logs
+  -- Step 3. return logs
+  -- Log is {stepname, output}
+  collected <- traverse getLogs (M.toList lc)
+  return (lc, collected)
+  where
+    f CollectionFinished = False
+    f _ = True
+    getLogs (stepName, CollectionReady) = do
+      logs <- requestLogs build.container 0
+      return $ Log {output = logs, step = stepName}
+    getLogs (stepName, CollectingLogs id lastCollected) = do
+      logs <- requestLogs id lastCollected
+      return $ Log {output = logs, step = stepName}
+    getLogs (stepName, CollectionFinished) = do
+      return $ Log {output = "", step = stepName}
+    requestLogs :: ContainerId -> Time.POSIXTime -> IO ByteString
+    requestLogs = undefined
+
+-- | State transition function for our log state machine
+-- NOTE: We actually have 2 states here
+-- 1. the state of our build
+-- 2. the state of our log collection
+-- TODO: refactor this code because it is extremely ugly.
+updateCollection :: BuildState -> Time.POSIXTime -> LogCollection -> LogCollection
+updateCollection state now = M.mapWithKey f
+  where
+    -- wrapper for fmap
+    f step = \case
+      -- We only transition into collecting logs once the build's step is the same as the log step
+      CollectionReady -> update step 0 CollectionReady
+      -- We are already collecting logs for this particular step
+      -- If we are already collecting logs, just check if the current step is still running
+      -- and proceed to update the timestamp accordingly.
+      -- If the step id change, we know the previous step must have completed and we can transition.
+      CollectingLogs _ _ -> update step now CollectionFinished
+      -- We already finished collecting logs for this step
+      CollectionFinished -> CollectionFinished
+
+    -- state transition function
+    update step since nextState =
+      case state of
+        BuildRunning brs ->
+          if brs.step == step
+            then CollectingLogs brs.container since
+            else nextState
+        _ -> nextState

@@ -4,14 +4,20 @@ module Docker where
 -- In essence, this retrieves the value of a specific key from a given object.
 -- This is appropriate only if the key is guaranteed to exist.
 -- If the key is not guaranteed, an alternative .:? could be used instead, which encodes it as Maybe a
+
 import Data.Aeson ((.:))
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Types as Aeson
 import qualified Data.Aeson.Types as Aeson.Types
+import Data.Fixed (showFixed)
+import qualified Data.Time.Clock.POSIX as Time
 import qualified Network.HTTP.Simple as HTTP
 import RIO
+import RIO.List.Partial (init)
 import qualified Socket
 import System.IO (putStrLn)
+
+--  This module abstracts over communication with the docker daemon.
 
 dockerApi = "/var/run/docker.sock"
 
@@ -42,7 +48,15 @@ data Service = Service
   { createContainer :: CreateContainerOptions -> IO ContainerId,
     startContainer :: ContainerId -> IO (),
     containerStatus :: ContainerId -> IO ContainerStatus,
-    createVolume :: IO Volume
+    createVolume :: IO Volume,
+    fetchLogs :: FetchLogsOptions -> IO ByteString
+  }
+
+-- | Data encoding the possible options for a log config
+data FetchLogsOptions = FetchLogsOptions
+  { container :: ContainerId,
+    since :: Time.POSIXTime,
+    until :: Time.POSIXTime
   }
 
 type RequestBuilder = Text -> HTTP.Request
@@ -165,5 +179,14 @@ createService = do
       { createContainer = createContainer_ mkReq,
         startContainer = startContainer_ mkReq,
         containerStatus = containerStatus_ mkReq,
-        createVolume = createVolume_ mkReq
+        createVolume = createVolume_ mkReq,
+        fetchLogs = fetchLogs_ mkReq
       }
+
+requestLogs_ :: RequestBuilder -> ContainerId -> Time.POSIXTime -> IO ByteString
+requestLogs_ mkReq id since = do
+  let path = "/containers/" <> containerIdToText id <> "/logs"
+      req = HTTP.setRequestQueryString [("since", Just $ fromString $ init $ show since)] $ HTTP.setRequestMethod "GET" $ mkReq path
+  HTTP.getResponseBody <$> HTTP.httpBS req
+
+fetchLogs_ = undefined
