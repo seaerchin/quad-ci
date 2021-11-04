@@ -4,7 +4,7 @@ import qualified Data.Time.Clock.POSIX as Time
 import Docker
 import RIO
 import qualified RIO.List as L
-import qualified RIO.Map as M (filter, foldMapWithKey, insert, mapWithKey, member, singleton, size, toList)
+import qualified RIO.Map as M (elems, filter, foldMapWithKey, insert, mapWithKey, member, singleton, size, toList, traverseWithKey)
 import RIO.NonEmpty (head)
 import qualified RIO.NonEmpty as NonEmpty
 import qualified RIO.Text as Text
@@ -180,3 +180,26 @@ updateCollection state now = M.mapWithKey f
             then CollectingLogs brs.container since
             else nextState
         _ -> nextState
+
+-- given a docker instance and the current logs so far
+-- collect and append the logs from the container to the current logs
+runCollection :: Docker.Service -> Time.POSIXTime -> LogCollection -> IO [Log]
+runCollection docker until collection = do
+  -- collection is a mapping from the stepname to the status
+  -- hence, we just check the state of the logs at the present moment
+  -- if we can collect logs, then we do
+  logs <- M.traverseWithKey f collection
+  return $ concat (M.elems logs)
+  where
+    f step = \case
+      CollectionReady -> pure []
+      CollectionFinished -> pure []
+      CollectingLogs container since -> do
+        let options =
+              Docker.FetchLogsOptions
+                { container = container,
+                  since = since,
+                  until = until
+                }
+        output <- docker.fetchLogs options
+        pure [Log {step = step, output = output}]
