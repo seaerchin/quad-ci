@@ -129,28 +129,12 @@ initLogCollection p = foldMap f p.steps
 -- | A log collection tracks the collection status of a particular step.
 -- Log output is then obtained from the container and returned as a tuple of the log collection and the actual logs.
 -- NOTE: There seems to be some redundancy as the Log datatype tracks the stepname, which is already stored in logCollection
-collectLogs :: LogCollection -> BuildRunningState -> IO (LogCollection, [Log])
-collectLogs lc build = do
-  -- logcollection is a map of stringname to status
-  -- Step 1. filter where the status is either ready or last collected time > interval
-  -- Step 2. for these containers, map them to an IO action fetching the logs
-  -- Step 3. return logs
-  -- Log is {stepname, output}
-  collected <- traverse getLogs (M.toList lc)
-  return (lc, collected)
-  where
-    f CollectionFinished = False
-    f _ = True
-    getLogs (stepName, CollectionReady) = do
-      logs <- requestLogs build.container 0
-      return $ Log {output = logs, step = stepName}
-    getLogs (stepName, CollectingLogs id lastCollected) = do
-      logs <- requestLogs id lastCollected
-      return $ Log {output = logs, step = stepName}
-    getLogs (stepName, CollectionFinished) = do
-      return $ Log {output = "", step = stepName}
-    requestLogs :: ContainerId -> Time.POSIXTime -> IO ByteString
-    requestLogs = undefined
+collectLogs :: Docker.Service -> LogCollection -> Build -> IO (LogCollection, [Log])
+collectLogs docker lc build = do
+  now <- Time.getPOSIXTime
+  logs <- runCollection docker now lc
+  let newCollection = updateCollection build.state now lc
+  return (newCollection, logs)
 
 -- | State transition function for our log state machine
 -- NOTE: We actually have 2 states here
