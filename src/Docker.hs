@@ -183,10 +183,8 @@ createService = do
         fetchLogs = fetchLogs_ mkReq
       }
 
-requestLogs_ :: RequestBuilder -> ContainerId -> Time.POSIXTime -> IO ByteString
-requestLogs_ mkReq id since = do
-  let path = "/containers/" <> containerIdToText id <> "/logs"
-      req = HTTP.setRequestQueryString [("since", Just $ fromString $ init $ show since)] $ HTTP.setRequestMethod "GET" $ mkReq path
+fetchLogs_ :: RequestBuilder -> FetchLogsOptions -> IO ByteString
+fetchLogs_ mkReq options = do
+  let path = "/containers/" <> containerIdToText options.container <> "/logs"
+      req = HTTP.setRequestQueryString [("since", Just $ fromString $ init $ show options.since)] $ HTTP.setRequestMethod "GET" $ mkReq path
   HTTP.getResponseBody <$> HTTP.httpBS req
-
-fetchLogs_ = undefined
