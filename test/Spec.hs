@@ -3,8 +3,11 @@ module Main where
 import Core
 import qualified Docker
 import RIO
+import qualified RIO.ByteString as BS
 import qualified RIO.Map as Map
 import qualified RIO.NonEmpty.Partial as NP
+import RIO.Set as Set
+import Runner (Hooks (logsCollected), Service (prepareBuild))
 import qualified Runner
 import qualified System.Process.Typed as Process
 import Test.Hspec
@@ -26,7 +29,7 @@ makePipeline s = Pipeline {steps = s}
 testRunSuccess :: Runner.Service -> IO ()
 testRunSuccess runner = do
   result <-
-    runner.runBuild
+    runner.runBuild emptyHooks
       =<< ( runner.prepareBuild $
               makePipeline $
                 NP.fromList
@@ -41,7 +44,7 @@ testRunSuccess runner = do
 testRunFailure :: Runner.Service -> IO ()
 testRunFailure runner = do
   result <-
-    runner.runBuild
+    runner.runBuild emptyHooks
       =<< ( runner.prepareBuild $
               makePipeline $
                 NP.fromList
@@ -54,7 +57,7 @@ testRunFailure runner = do
 testSharedWorkspace :: Runner.Service -> IO ()
 testSharedWorkspace runner = do
   result <-
-    runner.runBuild
+    runner.runBuild emptyHooks
       =<< ( runner.prepareBuild $
               makePipeline $
                 NP.fromList
@@ -66,6 +69,34 @@ testSharedWorkspace runner = do
           )
   result.state `shouldBe` BuildFinished BuildSucceeded
   Map.elems result.completedSteps `shouldBe` [StepSucceeded, StepSucceeded]
+
+testLogCollection :: Runner.Service -> IO ()
+testLogCollection runner = do
+  expected <- newMVar $ Set.fromList ["hello", "world", "Linux"]
+  let onLog :: Log -> IO ()
+      onLog log = do
+        remaining <- readMVar expected
+        forM_ remaining $ \word -> do
+          -- break the output using the remaining words
+          case BS.breakSubstring word log.output of
+            (_, "") -> pure () -- nothing found
+            -- if the word exists in the output, then delete it
+            -- from the set of expected words
+            _ -> modifyMVar_ expected (pure . Set.delete word)
+      hooks = Runner.Hooks {logsCollected = onLog}
+  build <-
+    runner.prepareBuild $
+      makePipeline $
+        NP.fromList
+          [ makeStep "Long Step" "ubuntu" ["echo hello", "sleep 2", "echo world"],
+            makeStep "Echo Linux" "ubuntu" ["uname -s"]
+          ]
+  result <- runner.runBuild hooks build
+  -- container should execute successfully
+  result.state `shouldBe` BuildFinished BuildSucceeded
+  Map.elems result.completedSteps `shouldBe` [StepSucceeded, StepSucceeded]
+  -- logs should be collected successfully - no expected remaining logs
+  readMVar expected >>= \logs -> logs `shouldBe` Set.empty
 
 -- | Remove dangling containers created by testing
 cleanupDocker :: IO ()
@@ -88,3 +119,11 @@ main = hspec do
       testRunFailure runner
     it "should share the workspace between container initializations" $ do
       testSharedWorkspace runner
+    it "should collect logs successfully" do
+      testLogCollection runner
+
+emptyHooks :: Runner.Hooks
+emptyHooks =
+  Runner.Hooks
+    { logsCollected = \_ -> pure ()
+    }

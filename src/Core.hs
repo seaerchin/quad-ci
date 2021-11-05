@@ -140,7 +140,6 @@ collectLogs docker lc build = do
 -- NOTE: We actually have 2 states here
 -- 1. the state of our build
 -- 2. the state of our log collection
--- TODO: refactor this code because it is extremely ugly.
 updateCollection :: BuildState -> Time.POSIXTime -> LogCollection -> LogCollection
 updateCollection state now = M.mapWithKey f
   where
