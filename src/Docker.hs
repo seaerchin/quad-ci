@@ -49,7 +49,8 @@ data Service = Service
     startContainer :: ContainerId -> IO (),
     containerStatus :: ContainerId -> IO ContainerStatus,
     createVolume :: IO Volume,
-    fetchLogs :: FetchLogsOptions -> IO ByteString
+    fetchLogs :: FetchLogsOptions -> IO ByteString,
+    pullImage :: Image -> IO ByteString
   }
 
 -- | Data encoding the possible options for a log config
@@ -63,7 +64,7 @@ type RequestBuilder = Text -> HTTP.Request
 
 -- Small utilities/helpers
 imageToText :: Image -> Text
-imageToText (Image image) = image
+imageToText image = image.name <> ":" <> image.tag
 
 exitCodeToInt :: ContainerExitCode -> Int
 exitCodeToInt (ContainerExitCode c) = c
@@ -180,7 +181,8 @@ createService = do
         startContainer = startContainer_ mkReq,
         containerStatus = containerStatus_ mkReq,
         createVolume = createVolume_ mkReq,
-        fetchLogs = fetchLogs_ mkReq
+        fetchLogs = fetchLogs_ mkReq,
+        pullImage = pullImage_ mkReq
       }
 
 fetchLogs_ :: RequestBuilder -> FetchLogsOptions -> IO ByteString
@@ -198,3 +200,27 @@ fetchLogs_ mkReq options = do
   where
     timestampToText :: Time.POSIXTime -> ByteString
     timestampToText = fromString . init . show
+
+-- pulls the specified image from docker repo
+-- refer here: https://docs.docker.com/engine/api/v1.41/#operation/ImageCreate
+pullImage_ :: RequestBuilder -> Image -> IO ByteString
+-- NOTE: instead of the weird destructuring below, i can instead use
+-- the namedfieldpuns extension to allow haskell to do it automagically.
+pullImage_ mkReq (Image {name = name, tag = tag}) = do
+  let path = "/images/create"
+      req =
+        HTTP.setRequestMethod "POST" $
+          HTTP.setQueryString
+            [ ("fromImage", Just (textToBs name)),
+              ("tag", Just (textToBs tag))
+            ]
+            $ mkReq path
+  HTTP.getResponseBody <$> HTTP.httpBS req
+
+bsToText :: ByteString -> Text
+bsToText b = case Text.decodeUtf8' b of
+  Left ue -> ""
+  Right txt -> txt
+
+textToBs :: Text -> ByteString
+textToBs = Text.encodeUtf8

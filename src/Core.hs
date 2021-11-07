@@ -76,6 +76,7 @@ progress docker build = case build.state of
       Right step -> do
         let script = Text.unlines $ ["set -ex"] <> NonEmpty.toList step.commands
             options = Docker.CreateContainerOptions step.image script build.volume
+        docker.pullImage step.image
         containerId <- docker.createContainer options
         docker.startContainer containerId
         pure build{state = BuildRunning $ BuildRunningState step.name containerId}
