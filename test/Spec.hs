@@ -18,7 +18,7 @@ makeStep :: Text -> Text -> [Text] -> Step
 makeStep name image commands =
   Step
     { name = StepName name,
-      image = Docker.Image image,
+      image = Docker.Image {name = image, tag = "latest"},
       commands = NP.fromList commands
     }
 
@@ -98,6 +98,18 @@ testLogCollection runner = do
   -- logs should be collected successfully - no expected remaining logs
   readMVar expected >>= \logs -> logs `shouldBe` Set.empty
 
+testImagePull :: Runner.Service -> IO ()
+testImagePull runner = do
+  Process.readProcessStdout "docker rmi -f busybox"
+  build <-
+    runner.prepareBuild $
+      makePipeline $
+        NP.fromList
+          [ makeStep "First Step" "busybox" ["date"]
+          ]
+  result <- runner.runBuild emptyHooks build
+  result.state `shouldBe` BuildFinished BuildSucceeded
+  Map.elems result.completedSteps `shouldBe` [StepSucceeded]
 -- | Remove dangling containers created by testing
 cleanupDocker :: IO ()
 cleanupDocker = void do
@@ -113,6 +125,8 @@ main = hspec do
   -- This allows to run an IO action during the construction stage of the test
   runner <- runIO $ Runner.createService =<< Docker.createService
   beforeAll cleanupDocker $ describe "Quad CI" do
+    it "should pull images correctly" $ do
+      testImagePull runner
     it "should run a successful build" $ do
       testRunSuccess runner
     it "should fail and exit successfully" $ do
