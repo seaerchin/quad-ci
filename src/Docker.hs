@@ -186,5 +186,15 @@ createService = do
 fetchLogs_ :: RequestBuilder -> FetchLogsOptions -> IO ByteString
 fetchLogs_ mkReq options = do
   let path = "/containers/" <> containerIdToText options.container <> "/logs"
-      req = HTTP.setRequestQueryString [("since", Just $ fromString $ init $ show options.since)] $ HTTP.setRequestMethod "GET" $ mkReq path
+      req =
+        HTTP.setRequestQueryString
+          [ ("since", Just $ timestampToText options.since),
+            ("stdout", Just "true"),
+            ("stderr", Just "true"),
+            ("until", Just $ timestampToText options.until)
+          ]
+          $ HTTP.setRequestMethod "GET" $ mkReq path
   HTTP.getResponseBody <$> HTTP.httpBS req
+  where
+    timestampToText :: Time.POSIXTime -> ByteString
+    timestampToText = fromString . init . show

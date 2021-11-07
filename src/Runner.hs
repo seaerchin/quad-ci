@@ -25,6 +25,9 @@ runBuild_ docker hooks build = do
     loop :: Build -> LogCollection -> IO Build
     loop build lc = do
       (newCollection, logs) <- collectLogs docker lc build
+      -- perform the log collection and discard the result
+      -- we only care about the side effect here
+      traverse_ hooks.logsCollected logs
       newBuild <- Core.progress docker build
       case newBuild.state of
         BuildFinished br -> pure newBuild
