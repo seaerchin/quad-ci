@@ -1,6 +1,7 @@
 module Main where
 
 import Core
+import qualified Data.Yaml as Yaml
 import qualified Docker
 import RIO
 import qualified RIO.ByteString as BS
@@ -110,6 +111,15 @@ testImagePull runner = do
   result <- runner.runBuild emptyHooks build
   result.state `shouldBe` BuildFinished BuildSucceeded
   Map.elems result.completedSteps `shouldBe` [StepSucceeded]
+
+testYamlDecoding :: Runner.Service -> IO ()
+testYamlDecoding runner = do
+  result <-
+    runner.runBuild emptyHooks
+      =<< runner.prepareBuild
+      =<< Yaml.decodeFileThrow "test/pipeline.yml"
+  result.state `shouldBe` BuildFinished BuildSucceeded
+
 -- | Remove dangling containers created by testing
 cleanupDocker :: IO ()
 cleanupDocker = void do
@@ -127,6 +137,8 @@ main = hspec do
   beforeAll cleanupDocker $ describe "Quad CI" do
     it "should pull images correctly" $ do
       testImagePull runner
+    it "should decode pipelines" $ do
+      testYamlDecoding runner
     it "should run a successful build" $ do
       testRunSuccess runner
     it "should fail and exit successfully" $ do
