@@ -11,9 +11,12 @@ import qualified Data.Aeson.Types as Aeson
 import qualified Data.Aeson.Types as Aeson.Types
 import Data.Fixed (showFixed)
 import qualified Data.Time.Clock.POSIX as Time
+import qualified Network.HTTP.Conduit as HTTP
 import qualified Network.HTTP.Simple as HTTP
 import RIO
 import RIO.List.Partial (init)
+import qualified RIO.Text as Text
+import qualified RIO.Text.Partial as Text.Partial
 import qualified Socket
 import System.IO (putStrLn)
 
@@ -31,7 +34,14 @@ newtype Volume = Volume Text deriving (Eq, Show)
 
 -- wrapper type
 -- an image points to an actual docker image
-newtype Image = Image Text deriving (Eq, Show)
+data Image = Image {name :: Text, tag :: Text} deriving (Eq, Show)
+
+instance Aeson.FromJSON Image where
+  parseJSON = Aeson.withText "parse-image" $ \image -> do
+    case Text.Partial.splitOn ":" image of
+      [name] -> pure $ Image {name = name, tag = "latest"}
+      [name, tag] -> pure $ Image {name = name, tag = tag}
+      _ -> fail $ "Image has incorrect number of colons" <> Text.unpack image
 
 newtype ContainerExitCode = ContainerExitCode Int deriving (Eq, Show)
 

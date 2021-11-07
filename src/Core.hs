@@ -1,5 +1,6 @@
 module Core where
 
+import qualified Data.Aeson as Aeson
 import qualified Data.Time.Clock.POSIX as Time
 import Docker
 import RIO
@@ -24,13 +25,14 @@ data CollectionStatus
 data Log = Log {output :: ByteString, step :: StepName} deriving (Eq, Show)
 
 -- a pipeline (i.e., a build) is modelled as a series of steps
-newtype Pipeline = Pipeline {steps :: Steps} deriving (Eq, Show)
+newtype Pipeline = Pipeline {steps :: Steps} deriving (Eq, Show, Generic, Aeson.FromJSON)
 
 type Steps = NonEmpty Step
 
 -- a step can have a label and the actual command.
 -- a step is tagged to the image it is to be ran on.
-data Step = Step {name :: StepName, commands :: NonEmpty Text, image :: Image} deriving (Eq, Show)
+data Step = Step {name :: StepName, commands :: NonEmpty Text, image :: Image}
+  deriving (Eq, Show, Generic, Aeson.FromJSON)
 
 -- a build is a wrapper around the pipeline
 -- a build reports the state the pipelins is currently in
@@ -44,7 +46,7 @@ data Build = Build
   deriving (Eq, Show)
 
 -- wrapper type
-newtype StepName = StepName Text deriving (Eq, Show, Ord)
+newtype StepName = StepName Text deriving (Eq, Show, Ord, Generic, Aeson.FromJSON)
 
 data BuildState = BuildReady | BuildRunning BuildRunningState | BuildFinished BuildResult deriving (Eq, Show)
 
