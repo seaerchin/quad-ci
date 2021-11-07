@@ -1,5 +1,6 @@
 module Core where
 
+import qualified Codec.Serialise as Serialise
 import qualified Data.Aeson as Aeson
 import qualified Data.Time.Clock.POSIX as Time
 import Docker
@@ -22,17 +23,17 @@ data CollectionStatus
   deriving (Eq, Show)
 
 -- | A log is tagged to each step in the pipeline and the output is a bytestring of raw textual data
-data Log = Log {output :: ByteString, step :: StepName} deriving (Eq, Show)
+data Log = Log {output :: ByteString, step :: StepName} deriving (Eq, Show, Generic, Serialise.Serialise)
 
 -- a pipeline (i.e., a build) is modelled as a series of steps
-newtype Pipeline = Pipeline {steps :: Steps} deriving (Eq, Show, Generic, Aeson.FromJSON)
+newtype Pipeline = Pipeline {steps :: Steps} deriving (Eq, Show, Generic, Aeson.FromJSON, Serialise.Serialise)
 
 type Steps = NonEmpty Step
 
 -- a step can have a label and the actual command.
 -- a step is tagged to the image it is to be ran on.
 data Step = Step {name :: StepName, commands :: NonEmpty Text, image :: Image}
-  deriving (Eq, Show, Generic, Aeson.FromJSON)
+  deriving (Eq, Show, Generic, Aeson.FromJSON, Serialise.Serialise)
 
 -- a build is a wrapper around the pipeline
 -- a build reports the state the pipelins is currently in
@@ -43,18 +44,23 @@ data Build = Build
     completedSteps :: Map StepName StepResult,
     volume :: Docker.Volume
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, Serialise.Serialise)
+
+newtype BuildNumber = BuildNumber Int deriving (Eq, Show, Generic, Serialise.Serialise)
+
+buildNumberToInt :: BuildNumber -> Int
+buildNumberToInt (BuildNumber i) = i
 
 -- wrapper type
-newtype StepName = StepName Text deriving (Eq, Show, Ord, Generic, Aeson.FromJSON)
+newtype StepName = StepName Text deriving (Eq, Show, Ord, Generic, Aeson.FromJSON, Serialise.Serialise)
 
-data BuildState = BuildReady | BuildRunning BuildRunningState | BuildFinished BuildResult deriving (Eq, Show)
+data BuildState = BuildReady | BuildRunning BuildRunningState | BuildFinished BuildResult deriving (Eq, Show, Generic, Serialise.Serialise)
 
-data BuildResult = BuildSucceeded | BuildFailed | BuildUnexpectedState Text deriving (Eq, Show)
+data BuildResult = BuildSucceeded | BuildFailed | BuildUnexpectedState Text deriving (Eq, Show, Generic, Serialise.Serialise)
 
-data StepResult = StepFailed ContainerExitCode | StepSucceeded deriving (Eq, Show)
+data StepResult = StepFailed ContainerExitCode | StepSucceeded deriving (Eq, Show, Generic, Serialise.Serialise)
 
-data BuildRunningState = BuildRunningState {step :: StepName, container :: ContainerId} deriving (Eq, Show)
+data BuildRunningState = BuildRunningState {step :: StepName, container :: ContainerId} deriving (Eq, Show, Generic, Serialise.Serialise)
 
 -- boilerplate
 stepNameToText :: StepName -> Text

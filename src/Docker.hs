@@ -5,6 +5,7 @@ module Docker where
 -- This is appropriate only if the key is guaranteed to exist.
 -- If the key is not guaranteed, an alternative .:? could be used instead, which encodes it as Maybe a
 
+import qualified Codec.Serialise as Serialise
 import Data.Aeson ((.:))
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Types as Aeson
@@ -30,11 +31,11 @@ dockerApi = "/var/run/docker.sock"
 -- For example: we define a signature Image -> IO (); this allows also Volume -> IO () if
 -- they were both defined using type.
 
-newtype Volume = Volume Text deriving (Eq, Show)
+newtype Volume = Volume Text deriving (Eq, Show, Generic, Serialise.Serialise)
 
 -- wrapper type
 -- an image points to an actual docker image
-data Image = Image {name :: Text, tag :: Text} deriving (Eq, Show)
+data Image = Image {name :: Text, tag :: Text} deriving (Eq, Show, Generic, Serialise.Serialise)
 
 instance Aeson.FromJSON Image where
   parseJSON = Aeson.withText "parse-image" $ \image -> do
@@ -43,11 +44,11 @@ instance Aeson.FromJSON Image where
       [name, tag] -> pure $ Image {name = name, tag = tag}
       _ -> fail $ "Image has incorrect number of colons" <> Text.unpack image
 
-newtype ContainerExitCode = ContainerExitCode Int deriving (Eq, Show)
+newtype ContainerExitCode = ContainerExitCode Int deriving (Eq, Show, Generic, Serialise.Serialise)
 
 data CreateContainerOptions = CreateContainerOptions {image :: Image, script :: Text, volume :: Volume} deriving (Eq, Show)
 
-newtype ContainerId = ContainerId Text deriving (Eq, Show)
+newtype ContainerId = ContainerId Text deriving (Eq, Show, Generic, Serialise.Serialise)
 
 -- | Represents the status of a container.
 -- ContainerOther represents an unknown state and should be taken as a failure state.
