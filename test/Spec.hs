@@ -8,7 +8,7 @@ import qualified RIO.ByteString as BS
 import qualified RIO.Map as Map
 import qualified RIO.NonEmpty.Partial as NP
 import RIO.Set as Set
-import Runner (Hooks (logsCollected), Service (prepareBuild))
+import Runner (Hooks (logCollected), Service (prepareBuild))
 import qualified Runner
 import qualified System.Process.Typed as Process
 import Test.Hspec
@@ -25,6 +25,12 @@ makeStep name image commands =
 
 makePipeline :: Steps -> Pipeline
 makePipeline s = Pipeline {steps = s}
+
+emptyHooks :: Runner.Hooks
+emptyHooks =
+  Runner.Hooks
+    { logCollected = \_ -> pure ()
+    }
 
 -- | Happy path test where everything passes
 testRunSuccess :: Runner.Service -> IO ()
@@ -84,7 +90,7 @@ testLogCollection runner = do
             -- if the word exists in the output, then delete it
             -- from the set of expected words
             _ -> modifyMVar_ expected (pure . Set.delete word)
-      hooks = Runner.Hooks {logsCollected = onLog}
+      hooks = Runner.Hooks {logCollected = onLog}
   build <-
     runner.prepareBuild $
       makePipeline $
@@ -147,9 +153,3 @@ main = hspec do
       testSharedWorkspace runner
     it "should collect logs successfully" do
       testLogCollection runner
-
-emptyHooks :: Runner.Hooks
-emptyHooks =
-  Runner.Hooks
-    { logsCollected = \_ -> pure ()
-    }
