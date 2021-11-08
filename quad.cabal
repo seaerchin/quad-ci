@@ -29,6 +29,7 @@ library
       Core
       Docker
       JobHandler
+      JobHandler.Memory
       Runner
       Server
       Socket
@@ -61,6 +62,7 @@ library
     , serialise
     , stm
     , time
+    , transformers
     , typed-process
     , wai-cors
     , yaml
@@ -98,6 +100,7 @@ executable quad
     , serialise
     , stm
     , time
+    , transformers
     , typed-process
     , wai-cors
     , yaml
@@ -137,6 +140,7 @@ test-suite quad-test
     , serialise
     , stm
     , time
+    , transformers
     , typed-process
     , wai-cors
     , yaml
