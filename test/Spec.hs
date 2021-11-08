@@ -1,8 +1,12 @@
 module Main where
 
+import qualified Agent
+import qualified Control.Concurrent.Async as Async
+import Control.Monad.Trans.Maybe
 import Core
 import qualified Data.Yaml as Yaml
 import qualified Docker
+import qualified JobHandler
 import RIO
 import qualified RIO.ByteString as BS
 import qualified RIO.Map as Map
@@ -10,6 +14,7 @@ import qualified RIO.NonEmpty.Partial as NP
 import RIO.Set as Set
 import Runner (Hooks (logCollected), Service (prepareBuild))
 import qualified Runner
+import qualified Server
 import qualified System.Process.Typed as Process
 import Test.Hspec
 
@@ -126,11 +131,49 @@ testYamlDecoding runner = do
       =<< Yaml.decodeFileThrow "test/pipeline.yml"
   result.state `shouldBe` BuildFinished BuildSucceeded
 
+testServerAndAgent :: Runner.Service -> IO ()
+testServerAndAgent runner = do
+  let handler = undefined :: JobHandler.Service -- TODO; this doesn't exist yet
+  -- setup server and agent
+  server <- Async.async do
+    Server.run (Server.Config 9000) handler
+  agent <- Async.async do
+    Agent.run (Agent.Config "http://localhost:9000") runner
+
+  -- link threads back to main so errors not silently ignored
+  Async.link server
+  Async.link agent
+
+  let pipeline = makePipeline $ NP.fromList [makeStep "agent-test" "busybox" ["echo hello", "echo from agent"]]
+  -- get build number
+  number <- handler.queueJob pipeline
+  checkBuild handler number
+
+  -- thread clean up
+  Async.cancel server
+  Async.cancel agent
+
 -- | Remove dangling containers created by testing
 cleanupDocker :: IO ()
 cleanupDocker = void do
   Process.readProcessStdout "docker rm -f $(docker ps -aq --filter \"label=quad\")"
   Process.readProcessStdout "docker volume rm -f $(docker volume ls -q --filter \"label=quad\")"
+
+checkBuild :: JobHandler.Service -> BuildNumber -> IO ()
+checkBuild handler number = do
+  result <- runMaybeT loop
+  case result of
+    Nothing -> fail "buildNumber should exist"
+    Just br -> br `shouldBe` BuildSucceeded
+  where
+    loop = do
+      job <- handler.findJob number
+      case job.state of
+        JobHandler.JobScheduled build -> do
+          case build.state of
+            BuildFinished s -> pure s
+            _ -> loop
+        _ -> loop
 
 -- | Main test runner
 -- NOTE: we are initializing containers again and again
@@ -145,6 +188,8 @@ main = hspec do
       testImagePull runner
     it "should decode pipelines" $ do
       testYamlDecoding runner
+    it "should run server and agent" $ do
+      testServerAndAgent runner
     it "should run a successful build" $ do
       testRunSuccess runner
     it "should fail and exit successfully" $ do
