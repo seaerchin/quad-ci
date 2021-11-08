@@ -7,6 +7,7 @@ import Core
 import qualified Data.Yaml as Yaml
 import qualified Docker
 import qualified JobHandler
+import qualified JobHandler.Memory
 import RIO
 import qualified RIO.ByteString as BS
 import qualified RIO.Map as Map
@@ -133,7 +134,7 @@ testYamlDecoding runner = do
 
 testServerAndAgent :: Runner.Service -> IO ()
 testServerAndAgent runner = do
-  let handler = undefined :: JobHandler.Service -- TODO; this doesn't exist yet
+  handler <- JobHandler.Memory.createService -- TODO; this doesn't exist yet
   -- setup server and agent
   server <- Async.async do
     Server.run (Server.Config 9000) handler
