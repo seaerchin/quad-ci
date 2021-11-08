@@ -46,7 +46,7 @@ data Build = Build
   }
   deriving (Eq, Show, Generic, Serialise.Serialise)
 
-newtype BuildNumber = BuildNumber Int deriving (Eq, Show, Generic, Serialise.Serialise)
+newtype BuildNumber = BuildNumber Int deriving (Eq, Show, Generic, Serialise.Serialise, Ord)
 
 buildNumberToInt :: BuildNumber -> Int
 buildNumberToInt (BuildNumber i) = i
