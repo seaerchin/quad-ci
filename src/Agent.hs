@@ -41,3 +41,10 @@ runCommand runner = \case
     let hooks = Runner.Hooks {logCollected = traceShowIO, buildUpdated = traceShowIO}
     build <- runner.prepareBuild pipeline
     void $ runner.runBuild hooks build
+
+sendMessage :: Config -> Msg -> IO ()
+sendMessage config msg = do
+  base <- HTTP.parseRequest config.endpoint
+  let body = Serialise.serialise msg
+      req = HTTP.setRequestBodyLBS body $ HTTP.setRequestPath "/agent/send" $ HTTP.setRequestMethod "POST" base
+  void $ HTTP.httpBS req

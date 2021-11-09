@@ -10,7 +10,14 @@ import qualified RIO.List as List
 import RIO.Map as Map
 import RIO.Map.Partial as Map
 
-data State = State {jobs :: Map BuildNumber JobHandler.Job, nextBuild :: Int} deriving (Eq, Show)
+-- | This file holds the internal state (hence, memory) of the job handler.
+-- It holds the logs, jobs and the next build to run.
+data State = State
+  { jobs :: Map BuildNumber JobHandler.Job,
+    nextBuild :: Int,
+    logs :: Map (BuildNumber, StepName) ByteString
+  }
+  deriving (Eq, Show)
 
 createService :: IO JobHandler.Service
 createService = do
@@ -18,7 +25,8 @@ createService = do
     STM.newTVarIO
       State
         { jobs = mempty,
-          nextBuild = 1
+          nextBuild = 1,
+          logs = mempty
         }
   pure
     JobHandler.Service
@@ -38,7 +46,8 @@ createService = do
             pure j
           hoistMaybe maybeJob,
         dispatchCmd = STM.atomically do STM.stateTVar state dispatchCmd_,
-        processMsg = \_ -> undefined
+        processMsg = \msg -> STM.atomically do
+          STM.modifyTVar' state $ processMsg_ msg
       }
 
 -- takes the current pipeline and the state
@@ -77,10 +86,18 @@ dispatchCmd_ state =
       JobHandler.JobQueued -> Just (k, job)
       _ -> a
 
+-- function to process the messages that the agent sends back to us to update us on builds
 processMsg_ :: Agent.Msg -> State -> State
 processMsg_ msg state = case msg of
-  Agent.LogCollected bn log -> _
-  Agent.BuildUpdated bn bu -> _
+  Agent.LogCollected bn log ->
+    let k = (bn, log.step)
+        updatedLogs = Map.adjust (\x -> x <> " " <> log.output) k state.logs
+     in state{logs = updatedLogs}
+  -- when we know that the build is updated, we have to update our internal state accordingly
+  Agent.BuildUpdated bn bu ->
+    let f job = job{state = JobHandler.JobScheduled bu}
+        updatedMap = Map.adjust f bn state.jobs
+     in state{jobs = updatedMap}
 
 hoistMaybe :: Applicative m => Maybe b -> MaybeT m b
 hoistMaybe mb =

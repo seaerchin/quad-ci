@@ -9,7 +9,8 @@ data Service = Service {runBuild :: Hooks -> Build -> IO Build, prepareBuild :: 
 -- This is a datatype to represent a callback.
 -- This has all the hooks which we want inside it.
 data Hooks = Hooks
-  { logCollected :: Log -> IO ()
+  { logCollected :: Log -> IO (),
+    buildUpdated :: Build -> IO ()
   }
 
 createService :: Docker.Service -> IO Service
@@ -29,6 +30,7 @@ runBuild_ docker hooks build = do
       -- we only care about the side effect here
       traverse_ hooks.logCollected logs
       newBuild <- Core.progress docker build
+      hooks.buildUpdated newBuild
       case newBuild.state of
         BuildFinished br -> pure newBuild
         _ -> do
