@@ -1,10 +1,12 @@
 module JobHandler.Memory where
 
+import qualified Agent
 import qualified Control.Concurrent.STM as STM
 import Control.Monad.Trans.Maybe
 import Core
 import qualified JobHandler
 import RIO
+import qualified RIO.List as List
 import RIO.Map as Map
 import RIO.Map.Partial as Map
 
@@ -35,7 +37,7 @@ createService = do
             let j = findJob_ buildNumber stateIO
             pure j
           hoistMaybe maybeJob,
-        dispatchCmd = pure undefined,
+        dispatchCmd = STM.atomically do STM.stateTVar state dispatchCmd_,
         processMsg = \_ -> undefined
       }
 
@@ -55,6 +57,30 @@ queueJob_ pipeline state =
 -- return the job
 findJob_ :: BuildNumber -> State -> Maybe JobHandler.Job
 findJob_ number state = Map.lookup number state.jobs
+
+-- finds the first job that is queued
+-- issue a dispatch command together with an updated state
+dispatchCmd_ :: State -> (Maybe Agent.Cmd, State)
+dispatchCmd_ state =
+  let updatedJob =
+        Map.foldrWithKey f Nothing state.jobs
+          >>= \(k, job) -> pure (k, job{state = JobHandler.JobAssigned})
+   in case updatedJob of
+        Nothing -> (Nothing, state)
+        Just (buildNumber, updatedJob) ->
+          let newMap = update (\_ -> pure updatedJob) (buildNumber) state.jobs
+              updated = state{jobs = newMap}
+           in (Just (Agent.StartBuild buildNumber updatedJob.pipeline), updated)
+  where
+    getQueued j = j.state == JobHandler.JobQueued
+    f k job a = case job.state of
+      JobHandler.JobQueued -> Just (k, job)
+      _ -> a
+
+processMsg_ :: Agent.Msg -> State -> State
+processMsg_ msg state = case msg of
+  Agent.LogCollected bn log -> _
+  Agent.BuildUpdated bn bu -> _
 
 hoistMaybe :: Applicative m => Maybe b -> MaybeT m b
 hoistMaybe mb =
