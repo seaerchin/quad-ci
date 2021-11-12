@@ -6,8 +6,7 @@ import qualified Data.Time.Clock.POSIX as Time
 import Docker
 import RIO
 import qualified RIO.List as L
-import qualified RIO.Map as M (elems, filter, foldMapWithKey, insert, mapWithKey, member, singleton, size, toList, traverseWithKey)
-import RIO.NonEmpty (head)
+import qualified RIO.Map as M (elems, filter, insert, mapWithKey, member, singleton, size, traverseWithKey)
 import qualified RIO.NonEmpty as NonEmpty
 import qualified RIO.Text as Text
 

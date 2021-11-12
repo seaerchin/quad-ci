@@ -8,9 +8,7 @@ module Docker where
 import qualified Codec.Serialise as Serialise
 import Data.Aeson ((.:))
 import qualified Data.Aeson as Aeson
-import qualified Data.Aeson.Types as Aeson
 import qualified Data.Aeson.Types as Aeson.Types
-import Data.Fixed (showFixed)
 import qualified Data.Time.Clock.POSIX as Time
 import qualified Network.HTTP.Conduit as HTTP
 import qualified Network.HTTP.Simple as HTTP

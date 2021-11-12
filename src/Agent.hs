@@ -2,18 +2,16 @@ module Agent where
 
 import qualified Codec.Serialise as Serialise
 import Core
-import qualified Docker
 import qualified Network.HTTP.Simple as HTTP
 import RIO
 import qualified Runner
-import System.IO (print)
 import System.Log.Logger as Logger
 
 data Cmd = StartBuild BuildNumber Pipeline deriving (Eq, Show, Generic, Serialise.Serialise)
 
 data Msg = LogCollected BuildNumber Log | BuildUpdated BuildNumber Build deriving (Eq, Show, Generic, Serialise.Serialise)
 
-data Config = Config {endpoint :: String} deriving (Eq, Show)
+newtype Config = Config {endpoint :: String} deriving (Eq, Show)
 
 run :: Config -> Runner.Service -> IO ()
 run config runner =
