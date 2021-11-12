@@ -1,21 +1,18 @@
 module Main where
 
-import qualified Agent
-import qualified Control.Concurrent.Async as Async
-import Control.Monad.Trans.Maybe
 import Core
+import qualified Data.Aeson as Aeson
 import qualified Data.Yaml as Yaml
 import qualified Docker
-import qualified JobHandler
-import qualified JobHandler.Memory
+import qualified Network.HTTP.Simple as HTTP
 import RIO
 import qualified RIO.ByteString as BS
+import qualified RIO.HashMap as HashMap
 import qualified RIO.Map as Map
 import qualified RIO.NonEmpty.Partial as NP
 import RIO.Set as Set
 import Runner (Hooks (buildUpdated, logCollected), Service (prepareBuild))
 import qualified Runner
-import qualified Server
 import Spec.Util
 import qualified System.Process.Typed as Process
 import Test.Hspec
@@ -122,6 +119,23 @@ testServerAndAgent =
     number <- handler.queueJob pipeline
     checkBuild handler number
 
+testWebhookTrigger :: Runner.Service -> IO ()
+testWebhookTrigger = runServerAndAgent $ \handler -> do
+  req <-
+    HTTP.setRequestBodyFile "test/github-payload.sample.json"
+      . HTTP.setRequestPath "/webhook/github"
+      . HTTP.setRequestMethod "POST"
+      <$> HTTP.parseRequest "http://localhost:9000"
+
+  res <- HTTP.httpBS req
+
+  let Right (Aeson.Object build) = Aeson.eitherDecodeStrict $ HTTP.getResponseBody res
+      Just (Aeson.Number number) = HashMap.lookup "number" build
+
+  checkBuild handler $ Core.BuildNumber (round number)
+
+  pure ()
+
 -- | Main test runner
 -- NOTE: we are initializing containers again and again
 -- This suggests that the containers are not cleaned up between test runs
@@ -131,6 +145,8 @@ main = hspec do
   -- This allows to run an IO action during the construction stage of the test
   runner <- runIO $ Runner.createService =<< Docker.createService
   beforeAll cleanupDocker $ describe "Quad CI" do
+    it "should process webhooks" $ do
+      testWebhookTrigger runner
     it "should pull images correctly" $ do
       testImagePull runner
     it "should decode pipelines" $ do
