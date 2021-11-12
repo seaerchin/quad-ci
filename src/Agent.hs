@@ -28,17 +28,23 @@ run config runner =
       do
         res <- HTTP.httpLBS req
         let cmd = Serialise.deserialise (HTTP.getResponseBody res) :: Maybe Cmd
-        traverse_ (runCommand runner) cmd
+        traverse_ (runCommand config runner) cmd
         -- the catch here is only evaluating for the do block it's enclosed in
         `catch` \e -> do
           Logger.warningM "quad.agent" "Server offline, waiting..."
           Logger.warningM "quad.agent" $ show (e :: HTTP.HttpException)
       threadDelay (3 * 1000 * 1000)
 
-runCommand :: Runner.Service -> Cmd -> IO ()
-runCommand runner = \case
+runCommand :: Config -> Runner.Service -> Cmd -> IO ()
+runCommand config runner = \case
   StartBuild buildNum pipeline -> do
-    let hooks = Runner.Hooks {logCollected = traceShowIO, buildUpdated = traceShowIO}
+    let hooks =
+          Runner.Hooks
+            { logCollected = \log -> do
+                sendMessage config (LogCollected buildNum log),
+              buildUpdated = \build -> do
+                sendMessage config (BuildUpdated buildNum build)
+            }
     build <- runner.prepareBuild pipeline
     void $ runner.runBuild hooks build
 

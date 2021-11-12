@@ -13,30 +13,12 @@ import qualified RIO.ByteString as BS
 import qualified RIO.Map as Map
 import qualified RIO.NonEmpty.Partial as NP
 import RIO.Set as Set
-import Runner (Hooks (logCollected), Service (prepareBuild))
+import Runner (Hooks (buildUpdated, logCollected), Service (prepareBuild))
 import qualified Runner
 import qualified Server
+import Spec.Util
 import qualified System.Process.Typed as Process
 import Test.Hspec
-
--- Helpers
-
-makeStep :: Text -> Text -> [Text] -> Step
-makeStep name image commands =
-  Step
-    { name = StepName name,
-      image = Docker.Image {name = image, tag = "latest"},
-      commands = NP.fromList commands
-    }
-
-makePipeline :: Steps -> Pipeline
-makePipeline s = Pipeline {steps = s}
-
-emptyHooks :: Runner.Hooks
-emptyHooks =
-  Runner.Hooks
-    { logCollected = \_ -> pure ()
-    }
 
 -- | Happy path test where everything passes
 testRunSuccess :: Runner.Service -> IO ()
@@ -96,7 +78,7 @@ testLogCollection runner = do
             -- if the word exists in the output, then delete it
             -- from the set of expected words
             _ -> modifyMVar_ expected (pure . Set.delete word)
-      hooks = Runner.Hooks {logCollected = onLog}
+      hooks = Runner.Hooks {logCollected = onLog, buildUpdated = \build -> traceShowIO build}
   build <-
     runner.prepareBuild $
       makePipeline $
@@ -133,48 +115,12 @@ testYamlDecoding runner = do
   result.state `shouldBe` BuildFinished BuildSucceeded
 
 testServerAndAgent :: Runner.Service -> IO ()
-testServerAndAgent runner = do
-  handler <- JobHandler.Memory.createService -- TODO; this doesn't exist yet
-  -- setup server and agent
-  server <- Async.async do
-    Server.run (Server.Config 9000) handler
-  agent <- Async.async do
-    Agent.run (Agent.Config "http://localhost:9000") runner
-
-  -- link threads back to main so errors not silently ignored
-  Async.link server
-  Async.link agent
-
-  let pipeline = makePipeline $ NP.fromList [makeStep "agent-test" "busybox" ["echo hello", "echo from agent"]]
-  -- get build number
-  number <- handler.queueJob pipeline
-  checkBuild handler number
-
-  -- thread clean up
-  Async.cancel server
-  Async.cancel agent
-
--- | Remove dangling containers created by testing
-cleanupDocker :: IO ()
-cleanupDocker = void do
-  Process.readProcessStdout "docker rm -f $(docker ps -aq --filter \"label=quad\")"
-  Process.readProcessStdout "docker volume rm -f $(docker volume ls -q --filter \"label=quad\")"
-
-checkBuild :: JobHandler.Service -> BuildNumber -> IO ()
-checkBuild handler number = do
-  result <- runMaybeT loop
-  case result of
-    Nothing -> fail "buildNumber should exist"
-    Just br -> br `shouldBe` BuildSucceeded
-  where
-    loop = do
-      job <- handler.findJob number
-      case job.state of
-        JobHandler.JobScheduled build -> do
-          case build.state of
-            BuildFinished s -> pure s
-            _ -> loop
-        _ -> loop
+testServerAndAgent =
+  runServerAndAgent $ \handler -> do
+    let pipeline = makePipeline $ NP.fromList [makeStep "agent-test" "busybox" ["echo hello", "echo from agent"]]
+    -- get build number
+    number <- handler.queueJob pipeline
+    checkBuild handler number
 
 -- | Main test runner
 -- NOTE: we are initializing containers again and again
