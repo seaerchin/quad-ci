@@ -45,7 +45,7 @@ library
       NoImplicitPrelude
       OverloadedStrings
       StrictData
-  ghc-options: -F -pgmF=record-dot-preprocessor
+  ghc-options: -F -pgmF=record-dot-preprocessor -Wall
   build-depends:
       aeson
     , async
@@ -82,7 +82,7 @@ executable quad
       NoImplicitPrelude
       OverloadedStrings
       StrictData
-  ghc-options: -F -pgmF=record-dot-preprocessor -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -F -pgmF=record-dot-preprocessor -Wall -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       aeson
     , async
@@ -110,6 +110,7 @@ test-suite quad-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      Spec.Util
       Paths_quad
   hs-source-dirs:
       test
@@ -121,7 +122,7 @@ test-suite quad-test
       NoImplicitPrelude
       OverloadedStrings
       StrictData
-  ghc-options: -F -pgmF=record-dot-preprocessor -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -F -pgmF=record-dot-preprocessor -Wall -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       aeson
     , async
