@@ -28,13 +28,12 @@ parsePushEvent bs = do
 
 fetchRemotePipeline :: JobHandler.CommitInfo -> IO Pipeline
 fetchRemotePipeline ci = do
-  base <- HTTP.parseRequest ("https://api.github.com/repos/" <> show ci.repo)
+  base <- HTTP.parseRequest "https://api.github.com"
   let req =
-        HTTP.setRequestMethod "GET" base
-          |> HTTP.addRequestHeader "Accept" "application/ vnd.github.v3.raw"
+        HTTP.addRequestHeader "Accept" "application/vnd.github.v3.raw" base
           |> HTTP.addRequestHeader "User-Agent" "quad-ci"
-          |> HTTP.setRequestPath "/contents/.quad.yml"
-          |> HTTP.setRequestQueryString [("ref", Just $ RIO.encodeUtf8 ci.sha)]
+          |> HTTP.setRequestPath ("/repos/" <> encodeUtf8 ci.repo <> "/contents/.quad.yml")
+          |> HTTP.setRequestQueryString [("ref", Just $ encodeUtf8 ci.sha)]
   res <- HTTP.getResponseBody <$> HTTP.httpBS req
   Yaml.decodeThrow res
 

@@ -11,7 +11,7 @@ import qualified RIO.HashMap as HashMap
 import qualified RIO.Map as Map
 import qualified RIO.NonEmpty.Partial as NP
 import RIO.Set as Set
-import Runner (Hooks (buildUpdated, logCollected), Service (prepareBuild))
+import Runner (Hooks (buildUpdated, logCollected))
 import qualified Runner
 import Spec.Util
 import qualified System.Process.Typed as Process
@@ -129,11 +129,18 @@ testWebhookTrigger = runServerAndAgent $ \handler -> do
 
   res <- HTTP.httpBS req
 
-  let Right (Aeson.Object build) = Aeson.eitherDecodeStrict $ HTTP.getResponseBody res
-      Just (Aeson.Number number) = HashMap.lookup "number" build
+  let body = Aeson.eitherDecodeStrict $ HTTP.getResponseBody res
 
-  checkBuild handler $ Core.BuildNumber (round number)
-
+  case body of
+    -- Just (Aeson.Number number) = HashMap.lookup "number" build
+    Left s -> undefined
+    Right (Aeson.Object build) ->
+      let n = HashMap.lookup "number" build
+       in case n of
+            Nothing -> undefined
+            Just (Aeson.Number number) -> checkBuild handler $ Core.BuildNumber (round number)
+            Just _ -> undefined
+    Right _ -> undefined
   pure ()
 
 -- | Main test runner
