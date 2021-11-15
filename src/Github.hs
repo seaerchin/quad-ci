@@ -1,0 +1,49 @@
+module Github where
+
+import Core
+import Data.Aeson ((.:))
+import qualified Data.Aeson as Aeson
+import qualified Data.Yaml as Yaml
+import qualified Data.Yaml.Aeson as Aeson (parseMaybe)
+import qualified Docker
+import Flow
+import qualified JobHandler
+import qualified Network.HTTP.Simple as HTTP
+import RIO
+import qualified RIO.NonEmpty.Partial as NonEmpty.Partial
+
+parsePushEvent :: ByteString -> IO JobHandler.CommitInfo
+parsePushEvent bs = do
+  -- parse and then queue it into the handler
+  let parsed = do
+        Aeson.parseMaybe parser =<< Aeson.decodeStrict bs
+        where
+          parser = Aeson.withObject "Webhook event" $ \obj -> do
+            repo <- obj .: "repository"
+            head <- obj .: "head_commit"
+            slug <- repo .: "full_name"
+            sha <- head .: "id"
+            pure $ JobHandler.CommitInfo {sha = sha, repo = slug}
+  maybe (throwString $ "Unparsable webhook event" <> show bs) pure parsed
+
+fetchRemotePipeline :: JobHandler.CommitInfo -> IO Pipeline
+fetchRemotePipeline ci = do
+  base <- HTTP.parseRequest ("https://api.github.com/repos/" <> show ci.repo)
+  let req =
+        HTTP.setRequestMethod "GET" base
+          |> HTTP.addRequestHeader "Accept" "application/ vnd.github.v3.raw"
+          |> HTTP.addRequestHeader "User-Agent" "quad-ci"
+          |> HTTP.setRequestPath "/contents/.quad.yml"
+          |> HTTP.setRequestQueryString [("ref", Just $ RIO.encodeUtf8 ci.sha)]
+  res <- HTTP.getResponseBody <$> HTTP.httpBS req
+  Yaml.decodeThrow res
+
+createCloneStep :: JobHandler.CommitInfo -> Step
+createCloneStep info =
+  Step
+    { name = StepName "clone",
+      commands =
+        NonEmpty.Partial.fromList
+          ["git clone -q https://github.com/" <> info.repo <> " .", "git checkout -qf " <> info.sha],
+      image = Docker.Image "alpine/git" "v2.26.2"
+    }

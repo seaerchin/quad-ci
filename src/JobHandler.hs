@@ -15,3 +15,6 @@ data Service = Service
     processMsg :: Agent.Msg -> IO (),
     findJob :: BuildNumber -> MaybeT IO Job
   }
+
+-- Atomic representing a single git commit
+data CommitInfo = CommitInfo {sha :: Text, repo :: Text} deriving (Eq, Show)
