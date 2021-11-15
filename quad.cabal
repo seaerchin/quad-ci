@@ -28,6 +28,7 @@ library
       Agent
       Core
       Docker
+      Github
       JobHandler
       JobHandler.Memory
       Runner
@@ -51,6 +52,7 @@ library
     , async
     , base
     , butcher
+    , flow
     , hslogger
     , http-client
     , http-conduit
@@ -88,6 +90,7 @@ executable quad
     , async
     , base
     , butcher
+    , flow
     , hslogger
     , http-client
     , http-conduit
@@ -128,6 +131,7 @@ test-suite quad-test
     , async
     , base
     , butcher
+    , flow
     , hslogger
     , hspec
     , http-client

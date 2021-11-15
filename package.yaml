@@ -39,6 +39,7 @@ dependencies:
 - typed-process 
 - wai-cors
 - yaml
+- flow
 - transformers
 
 default-extensions: 
