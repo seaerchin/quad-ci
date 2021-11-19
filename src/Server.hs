@@ -1,6 +1,7 @@
 module Server where
 
 import Codec.Serialise (deserialise, serialise)
+import Control.Monad.Trans.Maybe (MaybeT (runMaybeT))
 import qualified Core
 import qualified Data.Aeson as Aeson
 import qualified Github
@@ -10,6 +11,25 @@ import qualified RIO.NonEmpty as NonEmpty
 import qualified Web.Scotty as Scotty
 
 newtype Config = Config {port :: Int} deriving (Eq, Show)
+
+jobToJson :: Core.BuildNumber -> JobHandler.Job -> Aeson.Value
+jobToJson number job =
+  Aeson.object
+    [ ("number", Aeson.toJSON $ Core.buildNumberToInt number),
+      ("state", Aeson.toJSON $ jobStateToText job.state)
+    ]
+
+jobStateToText :: JobHandler.JobState -> Text
+jobStateToText = \case
+  JobHandler.JobQueued -> "queued"
+  JobHandler.JobAssigned -> "assigned"
+  JobHandler.JobScheduled b -> case b.state of
+    Core.BuildReady -> "ready"
+    Core.BuildRunning _ -> "running"
+    Core.BuildFinished result -> case result of
+      Core.BuildSucceeded -> "succeeded"
+      Core.BuildFailed -> "failed"
+      Core.BuildUnexpectedState _ -> "unexpectedstate"
 
 run :: Config -> JobHandler.Service -> IO ()
 run config handler =
@@ -35,4 +55,17 @@ run config handler =
           Core.Pipeline
             { steps = NonEmpty.cons step pipeline.steps
             }
-      Scotty.json $ Aeson.object [("number", Aeson.toJSON $ Core.buildNumberToInt number), ("status", "job queued")]
+      Scotty.json $
+        Aeson.object
+          [ ("number", Aeson.toJSON $ Core.buildNumberToInt number),
+            ("status", "job queued")
+          ]
+    Scotty.get "/build/:number" do
+      number <- Core.BuildNumber <$> Scotty.param "number"
+      job <- Scotty.liftAndCatchIO do
+        maybeJob <- runMaybeT $ handler.findJob number
+        case maybeJob of
+          -- if nothing found, return 404 back to the user
+          Nothing -> undefined
+          Just job -> pure job
+      pure ()
