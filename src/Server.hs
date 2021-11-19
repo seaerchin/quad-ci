@@ -2,11 +2,14 @@ module Server where
 
 import Codec.Serialise (deserialise, serialise)
 import Control.Monad.Trans.Maybe (MaybeT (runMaybeT))
+import Core
 import qualified Core
 import qualified Data.Aeson as Aeson
 import qualified Github
 import qualified JobHandler
+import qualified Network.HTTP.Types as HTTP.Types
 import RIO
+import qualified RIO.Map as Map
 import qualified RIO.NonEmpty as NonEmpty
 import qualified Web.Scotty as Scotty
 
@@ -16,8 +19,39 @@ jobToJson :: Core.BuildNumber -> JobHandler.Job -> Aeson.Value
 jobToJson number job =
   Aeson.object
     [ ("number", Aeson.toJSON $ Core.buildNumberToInt number),
-      ("state", Aeson.toJSON $ jobStateToText job.state)
+      ("state", Aeson.toJSON $ jobStateToText job.state),
+      ("steps", Aeson.toJSON steps)
     ]
+  where
+    build = case job.state of
+      JobHandler.JobScheduled b -> Just b
+      _ -> Nothing
+    steps =
+      ( \step ->
+          Aeson.object
+            [ ("name", Aeson.String $ Core.stepNameToText step.name),
+              ( "build",
+                Aeson.String case build of
+                  Just b -> stepStateToText b step
+                  Nothing -> "ready"
+              )
+            ]
+      )
+        <$> job.pipeline.steps
+
+stepStateToText :: Build -> Step -> Text
+stepStateToText build step =
+  case build.state of
+    BuildRunning brs -> if brs.step == step.name then "running" else stepNotRunning
+    _ -> stepNotRunning
+  where
+    stepNotRunning = case Map.lookup step.name build.completedSteps of
+      -- skipped because prior step failed
+      Nothing -> case build.state of
+        BuildFinished _ -> "skipped"
+        _ -> "ready"
+      Just StepSucceeded -> "succeeded"
+      Just (StepFailed _) -> "failed"
 
 jobStateToText :: JobHandler.JobState -> Text
 jobStateToText = \case
@@ -62,10 +96,8 @@ run config handler =
           ]
     Scotty.get "/build/:number" do
       number <- Core.BuildNumber <$> Scotty.param "number"
-      job <- Scotty.liftAndCatchIO do
-        maybeJob <- runMaybeT $ handler.findJob number
-        case maybeJob of
-          -- if nothing found, return 404 back to the user
-          Nothing -> undefined
-          Just job -> pure job
-      pure ()
+      maybeJob <- Scotty.liftAndCatchIO do
+        runMaybeT $ handler.findJob number
+      case maybeJob of
+        Nothing -> Scotty.raiseStatus HTTP.Types.status404 "Build not found"
+        Just job -> Scotty.json $ jobToJson number job
