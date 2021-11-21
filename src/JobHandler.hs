@@ -3,6 +3,7 @@ module JobHandler where
 import qualified Agent
 import Control.Monad.Trans.Maybe
 import Core
+import qualified Data.Aeson.Types as Aeson
 import RIO
 
 data Job = Job {pipeline :: Pipeline, state :: JobState, info :: CommitInfo} deriving (Eq, Show)
@@ -26,4 +27,4 @@ data CommitInfo = CommitInfo
     message :: Text,
     author :: Text
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, Aeson.ToJSON)

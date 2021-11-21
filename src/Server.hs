@@ -20,6 +20,7 @@ jobToJson number job =
   Aeson.object
     [ ("number", Aeson.toJSON $ Core.buildNumberToInt number),
       ("state", Aeson.toJSON $ jobStateToText job.state),
+      ("info", Aeson.toJSON $ job.info),
       ("steps", Aeson.toJSON steps)
     ]
   where
