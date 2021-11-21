@@ -4,6 +4,7 @@ import Core
 import qualified Data.Aeson as Aeson
 import qualified Data.Yaml as Yaml
 import qualified Docker
+import qualified JobHandler
 import qualified Network.HTTP.Simple as HTTP
 import RIO
 import qualified RIO.ByteString as BS
@@ -115,8 +116,16 @@ testServerAndAgent :: Runner.Service -> IO ()
 testServerAndAgent =
   runServerAndAgent $ \handler -> do
     let pipeline = makePipeline $ NP.fromList [makeStep "agent-test" "busybox" ["echo hello", "echo from agent"]]
+        info =
+          JobHandler.CommitInfo
+            { sha = "00000",
+              branch = "master",
+              message = "test commit",
+              author = "quad",
+              repo = "quad-ci/quad"
+            }
     -- get build number
-    number <- handler.queueJob pipeline
+    number <- handler.queueJob info pipeline
     checkBuild handler number
 
 testWebhookTrigger :: Runner.Service -> IO ()
