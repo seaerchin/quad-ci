@@ -87,7 +87,7 @@ run config handler =
         -- create a new clone step so that we clone the repo from github before running ci commands
         let step = Github.createCloneStep info
 
-        handler.queueJob $
+        handler.queueJob info $
           Core.Pipeline
             { steps = NonEmpty.cons step pipeline.steps
             }

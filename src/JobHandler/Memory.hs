@@ -34,8 +34,8 @@ createService = do
         -- this is passed into the queueJob_ function which alters it and returns
         -- a result + updated state
         -- The result is wrapped within the STM monad
-        queueJob = \pipeline -> STM.atomically do
-          STM.stateTVar state $ queueJob_ pipeline,
+        queueJob = \commitInfo pipeline -> STM.atomically do
+          STM.stateTVar state $ queueJob_ commitInfo pipeline,
         findJob = \buildNumber -> do
           maybeJob <- liftIO $ STM.atomically do
             -- within STM monad
@@ -62,9 +62,9 @@ latestJobs_ state = RIO.reverse $ Map.toList state.jobs
 
 -- takes the current pipeline and the state
 -- executes it then returns the associated build number
-queueJob_ :: Pipeline -> State -> (BuildNumber, State)
-queueJob_ pipeline state =
-  let job = JobHandler.Job {pipeline = pipeline, state = JobHandler.JobQueued}
+queueJob_ :: JobHandler.CommitInfo -> Pipeline -> State -> (BuildNumber, State)
+queueJob_ commitInfo pipeline state =
+  let job = JobHandler.Job {pipeline = pipeline, state = JobHandler.JobQueued, info = commitInfo}
       updatedState =
         state
           { jobs = Map.insert (BuildNumber state.nextBuild) job state.jobs,
