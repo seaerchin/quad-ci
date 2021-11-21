@@ -51,7 +51,7 @@ createService = do
           pure $ fetchLogs_ number step s,
         latestJobs = STM.atomically do
           s <- STM.readTVar state
-          pure $ latestJobs_ s
+          pure $ latestJobs_ s, 
       }
 
 fetchLogs_ :: BuildNumber -> StepName -> State -> Maybe ByteString

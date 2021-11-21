@@ -3,7 +3,6 @@ module Server where
 import Codec.Serialise (deserialise, serialise)
 import Control.Monad.Trans.Maybe (MaybeT (runMaybeT))
 import Core
-import qualified Core
 import qualified Data.Aeson as Aeson
 import qualified Github
 import qualified JobHandler
@@ -108,3 +107,8 @@ run config handler =
 
       log <- Scotty.liftAndCatchIO $ handler.fetchLogs number step
       Scotty.raw $ fromStrictBytes $ fromMaybe "" log
+
+    Scotty.get "/build" do
+      jobs <- Scotty.liftAndCatchIO do
+        handler.latestJobs
+      Scotty.json $ (\(number, job) -> jobToJson number job) <$> jobs
