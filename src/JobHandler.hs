@@ -14,7 +14,8 @@ data Service = Service
     dispatchCmd :: IO (Maybe Agent.Cmd),
     processMsg :: Agent.Msg -> IO (),
     findJob :: BuildNumber -> MaybeT IO Job,
-    fetchLogs :: BuildNumber -> StepName -> IO (Maybe ByteString)
+    fetchLogs :: BuildNumber -> StepName -> IO (Maybe ByteString),
+    latestJobs :: IO [(BuildNumber, Job)]
   }
 
 -- Atomic representing a single git commit

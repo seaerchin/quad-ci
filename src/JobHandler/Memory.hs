@@ -48,11 +48,17 @@ createService = do
           STM.modifyTVar' state $ processMsg_ msg,
         fetchLogs = \number step -> STM.atomically do
           s <- STM.readTVar state
-          pure $ fetchLogs_ number step s
+          pure $ fetchLogs_ number step s,
+        latestJobs = STM.atomically do
+          s <- STM.readTVar state
+          pure $ latestJobs_ s
       }
 
 fetchLogs_ :: BuildNumber -> StepName -> State -> Maybe ByteString
 fetchLogs_ bn step state = state.logs !? (bn, step)
+
+latestJobs_ :: State -> [(BuildNumber, JobHandler.Job)]
+latestJobs_ state = RIO.reverse $ Map.toList state.jobs
 
 -- takes the current pipeline and the state
 -- executes it then returns the associated build number
