@@ -6,9 +6,7 @@ import Control.Monad.Trans.Maybe
 import Core
 import qualified JobHandler
 import RIO
-import qualified RIO.List as List
 import RIO.Map as Map
-import RIO.Map.Partial as Map
 
 -- | This file holds the internal state (hence, memory) of the job handler.
 -- It holds the logs, jobs and the next build to run.
@@ -47,8 +45,14 @@ createService = do
           hoistMaybe maybeJob,
         dispatchCmd = STM.atomically do STM.stateTVar state dispatchCmd_,
         processMsg = \msg -> STM.atomically do
-          STM.modifyTVar' state $ processMsg_ msg
+          STM.modifyTVar' state $ processMsg_ msg,
+        fetchLogs = \number step -> STM.atomically do
+          s <- STM.readTVar state
+          pure $ fetchLogs_ number step s
       }
+
+fetchLogs_ :: BuildNumber -> StepName -> State -> Maybe ByteString
+fetchLogs_ bn step state = state.logs !? (bn, step)
 
 -- takes the current pipeline and the state
 -- executes it then returns the associated build number
