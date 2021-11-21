@@ -19,4 +19,11 @@ data Service = Service
   }
 
 -- Atomic representing a single git commit
-data CommitInfo = CommitInfo {sha :: Text, repo :: Text} deriving (Eq, Show)
+data CommitInfo = CommitInfo
+  { sha :: Text,
+    repo :: Text,
+    branch :: Text,
+    message :: Text,
+    author :: Text
+  }
+  deriving (Eq, Show)

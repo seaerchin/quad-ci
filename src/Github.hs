@@ -11,6 +11,7 @@ import qualified JobHandler
 import qualified Network.HTTP.Simple as HTTP
 import RIO
 import qualified RIO.NonEmpty.Partial as NonEmpty.Partial
+import qualified RIO.Text as Text
 
 parsePushEvent :: ByteString -> IO JobHandler.CommitInfo
 parsePushEvent bs = do
@@ -23,7 +24,17 @@ parsePushEvent bs = do
             head <- obj .: "head_commit"
             slug <- repo .: "full_name"
             sha <- head .: "id"
-            pure $ JobHandler.CommitInfo {sha = sha, repo = slug}
+            branch <- obj .: "ref" <&> Text.dropPrefix "refs/heads/"
+            message <- head .: "message"
+            author <- head .: "author" >>= \author -> author .: "username"
+            pure $
+              JobHandler.CommitInfo
+                { sha = sha,
+                  repo = slug,
+                  branch = branch,
+                  author = author,
+                  message = message
+                }
   maybe (throwString $ "Unparsable webhook event" <> show bs) pure parsed
 
 fetchRemotePipeline :: JobHandler.CommitInfo -> IO Pipeline
