@@ -7,6 +7,7 @@ import qualified Data.Aeson as Aeson
 import qualified Github
 import qualified JobHandler
 import qualified Network.HTTP.Types as HTTP.Types
+import qualified Network.Wai.Middleware.Cors as Cors
 import RIO
 import qualified RIO.Map as Map
 import qualified RIO.NonEmpty as NonEmpty
@@ -67,6 +68,8 @@ jobStateToText = \case
 run :: Config -> JobHandler.Service -> IO ()
 run config handler =
   Scotty.scotty config.port do
+    Scotty.middleware Cors.simpleCors
+
     Scotty.post "/agent/pull" do
       cmd <- Scotty.liftAndCatchIO do
         handler.dispatchCmd
@@ -93,6 +96,7 @@ run config handler =
           [ ("number", Aeson.toJSON $ Core.buildNumberToInt number),
             ("status", "job queued")
           ]
+
     Scotty.get "/build/:number" do
       number <- Core.BuildNumber <$> Scotty.param "number"
       maybeJob <- Scotty.liftAndCatchIO do
