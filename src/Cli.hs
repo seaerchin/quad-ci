@@ -47,7 +47,7 @@ main = Butcher.mainFromCmdParserWithHelpDesc $
         case readMaybe port of
           Nothing -> throwString "Port must be a number"
           Just p -> do
-            let config = Server.Config {port = (read p :: Int)}
+            let config = Server.Config {port = p}
             runCommand $ StartServer config
 
     Butcher.addCmd "start-agent" do
