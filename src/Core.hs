@@ -50,6 +50,9 @@ newtype BuildNumber = BuildNumber Int deriving (Eq, Show, Generic, Serialise.Ser
 buildNumberToInt :: BuildNumber -> Int
 buildNumberToInt (BuildNumber i) = i
 
+displayBuildNumber :: BuildNumber -> String
+displayBuildNumber number = "#" <> show (buildNumberToInt number)
+
 -- wrapper type
 newtype StepName = StepName Text deriving (Eq, Show, Ord, Generic, Aeson.FromJSON, Serialise.Serialise)
 

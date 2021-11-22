@@ -11,6 +11,7 @@ import qualified Network.Wai.Middleware.Cors as Cors
 import RIO
 import qualified RIO.Map as Map
 import qualified RIO.NonEmpty as NonEmpty
+import qualified System.Log.Logger as Logger
 import qualified Web.Scotty as Scotty
 
 newtype Config = Config {port :: Int} deriving (Eq, Show)
@@ -75,10 +76,12 @@ run config handler =
       cmd <- Scotty.liftAndCatchIO do
         handler.dispatchCmd
       Scotty.raw $ serialise cmd
+
     Scotty.post "/agent/send" do
       msg <- deserialise <$> Scotty.body
       Scotty.liftAndCatchIO $ handler.processMsg msg
       Scotty.json ("message procesed" :: Text)
+
     Scotty.post "/webhook/github" do
       body <- Scotty.body
       number <- Scotty.liftAndCatchIO do
@@ -88,10 +91,15 @@ run config handler =
         -- create a new clone step so that we clone the repo from github before running ci commands
         let step = Github.createCloneStep info
 
-        handler.queueJob info $
-          Core.Pipeline
-            { steps = NonEmpty.cons step pipeline.steps
-            }
+        buildNum <-
+          handler.queueJob info $
+            Core.Pipeline
+              { steps = NonEmpty.cons step pipeline.steps
+              }
+
+        Logger.infoM "quad.server" $ "Queued job " <> Core.displayBuildNumber buildNum
+        pure buildNum
+
       Scotty.json $
         Aeson.object
           [ ("number", Aeson.toJSON $ Core.buildNumberToInt number),
